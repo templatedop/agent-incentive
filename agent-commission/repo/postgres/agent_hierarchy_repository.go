@@ -58,7 +58,7 @@ func (r *AgentHierarchyRepository) CreateHierarchyRelationship(
 
 // GetActiveCoordinatorForAgent retrieves the currently active coordinator for an agent
 // BR-IC-AH-001: Get agent's current coordinator
-func (r *AgentHierarchyRepository) GetActiveCoordinatorForAgent(ctx context.Context, agentID int64) (*domain.AgentHierarchy, error) {
+func (r *AgentHierarchyRepository) GetActiveCoordinatorForAgent(ctx context.Context, agentID int64) (domain.AgentHierarchy, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 

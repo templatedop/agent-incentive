@@ -311,7 +311,7 @@ func (r *AgentProfileRepository) CheckPANExists(ctx context.Context, pan string,
 
 // GetCoordinatorByID retrieves coordinator details for validation
 // BR-IC-AH-001: Verify coordinator exists before assigning to advisor
-func (r *AgentProfileRepository) GetCoordinatorByID(ctx context.Context, coordinatorID int64) (*domain.AgentProfile, error) {
+func (r *AgentProfileRepository) GetCoordinatorByID(ctx context.Context, coordinatorID int64) (domain.AgentProfile, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
