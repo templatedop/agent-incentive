@@ -13,10 +13,18 @@ import (
 var FxRepo = fx.Module(
 	"Repomodule",
 	fx.Provide(
-		// Agent repositories will be added here
-		// Example: postgres.NewAgentProfileRepository,
-		// Example: postgres.NewAgentLicenseRepository,
-		// Example: postgres.NewCommissionRepository,
+		// Phase 1: Agent Onboarding & Profile Management
+		postgres.NewAgentProfileRepository,
+		postgres.NewAgentHierarchyRepository,
+		postgres.NewReferenceDataRepository,
+
+		// Phase 2: License Management (to be added)
+		// postgres.NewAgentLicenseRepository,
+
+		// Phase 3: Commission Rate Configuration (to be added)
+		// postgres.NewCommissionRateRepository,
+
+		// Phase 4+: Additional repositories...
 	),
 )
 
