@@ -63,6 +63,9 @@ var FxHandler = fx.Module(
 		// Phase 6: Suspense (2 APIs)
 		handler.NewSuspenseHandler,
 
+		// Phase 7: Workflow Management (8 APIs)
+		handler.NewWorkflowManagementHandler,
+
 		// Future phases
 		// etc.
 	),
