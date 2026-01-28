@@ -3,9 +3,9 @@
 ## Current Status
 
 **Phase**: Phase 0 - COMPLETE ✅ | Phase 1 - IN PROGRESS 🔄
-**Current Module**: Phase 1.1 - Agent Onboarding (Tasks 1-5 COMPLETE, Tasks 6-8 PENDING)
+**Current Module**: Phase 1.1 - Agent Onboarding (Tasks 1-7 COMPLETE, Task 8 PENDING)
 **Last Updated**: 2026-01-28
-**Progress**: 5% (0/105 APIs completed) | Infrastructure: 100% | Module 1.1: 63% (5/8 tasks)
+**Progress**: 6% (6/105 APIs completed) | Infrastructure: 100% | Module 1.1: 88% (7/8 tasks)
 
 ---
 
@@ -66,11 +66,11 @@
 - [x] 1.1.3 Domain models
 - [x] 1.1.4 DTOs
 - [x] 1.1.5 Repository (REFACTORED with batch optimization)
-- [ ] 1.1.6 Temporal workflow
-- [ ] 1.1.7 Handler
+- [x] 1.1.6 Temporal workflow
+- [x] 1.1.7 Handler
 - [ ] 1.1.8 Unit tests
 
-**Deliverables (Module 1.1 - Tasks 1-5):**
+**Deliverables (Module 1.1 - Tasks 1-7):**
 - ✅ **Domain Models** (`agent-commission/core/domain/`)
   - agent_profile.go (AgentProfile entity with 30+ fields)
   - agent_address.go (Address management)
@@ -83,6 +83,7 @@
 - ✅ **Request/Response DTOs** (`agent-commission/handler/`)
   - request.go - 11 request structures with validation tags
   - response/agent.go - 15 response structures
+  - response/agent_wrappers.go - Response wrappers with port.StatusCodeAndMessage
   - Complete coverage for all onboarding workflows
 
 - ✅ **Repository Layer** (`agent-commission/repo/postgres/`)
@@ -103,9 +104,40 @@
     - GetDivisionsByCircle, GetDivisionByID
     - GetAllProductPlans, GetActiveProductPlans
 
+- ✅ **Temporal Workflow** (`agent-commission/workflows/`)
+  - agent_onboarding_workflow.go - WF-IC-ONB-001 implementation
+    - 8-step workflow orchestration
+    - Handles all agent types with conditional logic
+    - BR-IC-AH-001: Advisor-Coordinator validation
+    - BR-IC-AH-003: HRMS integration (stub)
+    - VR-IC-PROF-002: PAN uniqueness validation
+  - activities/agent_activities.go - 8 activities
+    - ValidateAgentInputActivity, CheckPANExistsActivity
+    - FetchEmployeeFromHRMSActivity (TODO: actual integration)
+    - ValidateCoordinatorActivity, GenerateAgentCodeActivity
+    - CreateAgentProfileActivity, CreateHierarchyActivity
+    - SendOnboardingNotificationActivity (TODO: actual integration)
+  - types.go - Workflow input/output types
+  - temporal_client.go - Temporal client configuration
+  - worker.go - Worker registration with task queue
+
+- ✅ **HTTP Handler Layer** (`agent-commission/handler/`)
+  - agent_onboarding.go - 6 API endpoints
+    - POST /v1/agents/onboard - Agent onboarding with workflow
+    - GET /v1/agents/:id - Get agent profile
+    - GET /v1/agents - Search agents with filters
+    - PUT /v1/agents/:id - Update agent profile
+    - PUT /v1/agents/:id/status - Update agent status
+    - PUT /v1/agents/:id/coordinator - Assign/change coordinator
+  - Plain Go functions: func(sctx *serverRoute.Context, req Type) (*RespType, error)
+  - Integrated with Temporal client for workflow execution
+
 - ✅ **Bootstrap Integration**
-  - Updated bootstrap/bootstrapper.go FxRepo module
-  - Registered all 3 repositories with dependency injection
+  - Updated bootstrap/bootstrapper.go with 3 modules:
+    - FxRepo: Registered all repositories
+    - FxWorkflow: Temporal client, activities, worker
+    - FxHandler: Agent onboarding handler
+  - Updated main.go to enable workflow module
 
 - ✅ **Critical Learning: Batch Optimization**
   - Refactored all multi-query operations to use pgx.Batch
