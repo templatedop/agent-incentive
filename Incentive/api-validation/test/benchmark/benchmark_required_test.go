@@ -1,0 +1,65 @@
+package benchmark
+
+import (
+	"testing"
+
+	"github.com/asaskevich/govalidator"
+	"github.com/go-playground/validator/v10"
+	"github.com/gookit/validate"
+
+	"gitlab.cept.gov.in/it-2.0-common/n-api-validation/test"
+)
+
+func BenchmarkGoValidRequired(b *testing.B) {
+	instance := test.Required{
+		Name:  "test",
+		Age:   1,
+		Items: []string{"test"},
+	}
+	for b.Loop() {
+		err := test.ValidateRequired(&instance)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+	}
+}
+
+func BenchmarkGoPlaygroundRequired(b *testing.B) {
+	validate := validator.New()
+	instance := test.Required{
+		Name:  "test",
+		Age:   1,
+		Items: []string{"test"},
+	}
+	for b.Loop() {
+		err := validate.Struct(&instance)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+	}
+}
+
+func BenchmarkGoValidatorRequired(b *testing.B) {
+	testString := "test"
+	for b.Loop() {
+		// Check if string is not empty
+		if len(testString) == 0 {
+			b.Fatal("validation failed")
+		}
+		// Or use govalidator.IsNull for empty check
+		if govalidator.IsNull(testString) {
+			b.Fatal("validation failed")
+		}
+	}
+}
+
+func BenchmarkGookitValidateRequired(b *testing.B) {
+	testString := "test"
+	for b.Loop() {
+		v := validate.New(map[string]any{"test": testString})
+		v.StringRule("test", "required")
+		if !v.Validate() {
+			b.Fatal("validation failed:", v.Errors)
+		}
+	}
+}

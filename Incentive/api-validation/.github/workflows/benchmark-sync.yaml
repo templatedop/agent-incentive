@@ -1,0 +1,51 @@
+name: Sync Benchmarks on push to main
+
+on:
+  push:
+    branches:
+      - main
+jobs:
+  sync-benchmarks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: ./scripts
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run benchmark sync script
+        run: ./sync-benchmarks.sh
+
+      - name: Commit and push changes
+        id: commit-changes
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to commit"
+            echo "committed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          git commit -m "Sync benchmark results"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify completion
+        run: |
+          if [ "${{ steps.commit-changes.outputs.committed }}" = "true" ]; then
+            echo "Benchmark sync completed successfully."
+          else
+            echo "Benchmark sync did not make any changes."
+          fi

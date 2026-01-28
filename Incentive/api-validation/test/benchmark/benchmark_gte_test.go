@@ -1,0 +1,30 @@
+package benchmark
+
+import (
+	"testing"
+
+	"github.com/go-playground/validator/v10"
+
+	"gitlab.cept.gov.in/it-2.0-common/n-api-validation/test"
+)
+
+func BenchmarkGoValidGTE(b *testing.B) {
+	instance := test.GTE{Age: 25}
+	for b.Loop() {
+		err := test.ValidateGTE(&instance)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+	}
+}
+
+func BenchmarkGoPlaygroundGTE(b *testing.B) {
+	validate := validator.New()
+	instance := test.GTE{Age: 25}
+	for b.Loop() {
+		err := validate.Struct(&instance)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+	}
+}

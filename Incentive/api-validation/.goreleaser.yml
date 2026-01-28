@@ -1,0 +1,56 @@
+version: 2
+
+project_name: govalid
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: govalid
+    main: ./cmd/govalid
+    binary: govalid
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: govalid
+    formats: ['tar.gz']
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+    files:
+      - LICENSE
+      - README.md
+    ids:
+      - govalid
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+changelog:
+  sort: asc
+
+release:
+  use_existing_draft: true
+
+homebrew_casks:
+  - name: govalid
+    repository:
+      owner: templatedop
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://gitlab.cept.gov.in/it-2.0-common/n-api-validation
+    description: "A Go code generator for validation functions"
+    license: MIT
+    binaries: [govalid]

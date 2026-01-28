@@ -1,0 +1,801 @@
+package apierrors
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// respondWithError is a helper function to reduce code duplication in error handlers.
+// It creates an AppError and APIErrorResponse, then sends the JSON response.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//   - statusCodeAndMessage: The HTTP status code and message configuration.
+//   - message: The error message to include in the AppError.
+//   - err: The original error (can be nil).
+func respondWithError(
+	ctx *gin.Context,
+	statusCodeAndMessage statusCodeAndMessage,
+	message string,
+	err error,
+) {
+	appError := NewAppError(message, statusCodeAndMessage.StatusCode, err)
+	apiErrorResponse := NewHTTPAPIErrorResponse(statusCodeAndMessage, appError)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleNoRouteError handles requests to non-existent routes.
+// It creates an application error with a 404 status code and a message indicating
+// that the requested path does not exist. The error is then wrapped in an HTTP API
+// error response and returned as a JSON response.
+//
+// Parameters:
+//   - ctx: The context of the HTTP request.
+//
+// Returns:
+//   - HTTP 404 Not Found
+func HandleNoRouteError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorNotFound, "The requested path does not exist", nil)
+}
+
+// HandleNoMethodError handles HTTP requests with unsupported methods.
+// It creates an application error indicating that the requested HTTP method is not allowed for the specified path,
+// and sends an appropriate JSON response with a 404 status code.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//   - HTTP 405 HTTP method not supported
+func HandleNoMethodError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorMethodNotAllowed, "The requested HTTP method is not allowed for this path", nil)
+}
+
+// HandleBindingError handles errors that occur during the binding process in a Gin context.
+// It checks if the error is a validation error and creates an appropriate AppError with field-specific errors.
+// If the error is not a validation error, it handles it as a generic binding error.
+// The function then creates a structured HTTP response for the error and sends it as a JSON response.
+//
+// Parameters:
+//   - ctx: The Gin context in which the error occurred.
+//   - err: The error that occurred during the binding process.
+//
+// Returns:
+//   - HTTP 400 Bad Request
+func HandleBindingError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+
+	// Check if the error is of type AppError.
+	if appErr, ok := Find[*AppError](err); ok {
+		apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorBadRequest, *appErr)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+
+	// Declare appErr for use in subsequent branches
+	var appErr *AppError
+
+	// Check if the error is a validator.ValidationErrors.
+	if ve, ok := Find[validator.ValidationErrors](err); ok {
+		// Create a new AppError for a binding error.
+		newAppErr := NewAppError("Binding error", http.StatusBadRequest, err)
+		appErr = &newAppErr // Get a pointer to the newly created AppError
+
+		// Extract field-specific errors.
+		var fieldErrors []FieldError
+		for _, err := range ve {
+			fieldError := appErr.NewFieldError(
+				err.Field(),
+				err.Value(),
+				fmt.Sprintf("Validation failed for '%s' field", err.Field()),
+				err.Tag(),
+			)
+			fieldErrors = append(fieldErrors, fieldError)
+		}
+
+		appErr.SetFieldErrors(fieldErrors)
+	} else {
+		// var syntaxError *json.SyntaxError
+		// var unmarshalTypeError *json.UnmarshalTypeError
+		// var invalidUnmarshalError *json.InvalidUnmarshalError
+
+		var errMsg string
+
+		_, isSyntaxError := Find[*json.SyntaxError](err)
+		unmarshalTypeError, isUnmarshalTypeError := Find[*json.UnmarshalTypeError](err)
+		_, isInvalidUnmarshalError := Find[*json.InvalidUnmarshalError](err)
+
+		switch {
+		case isSyntaxError, Is(err, io.ErrUnexpectedEOF), isInvalidUnmarshalError:
+			errMsg = "Malformed JSON: Check for missing or extra braces, commas, or quotes."
+		case Is(err, io.EOF):
+			errMsg = "Body cannot be empty"
+		case isUnmarshalTypeError:
+			if unmarshalTypeError.Field != "" {
+				errMsg = fmt.Sprintf(
+					"Incorrect JSON type for field '%s' expected '%s' got '%s'",
+					unmarshalTypeError.Field,
+					unmarshalTypeError.Type,
+					unmarshalTypeError.Value,
+				)
+			} else {
+				errMsg = "Malformed JSON or type mismatch at root level"
+			}
+
+		default:
+			errMsg = "Malformed request"
+		}
+
+		er := errors.New(errMsg)
+		newAppErr := NewAppError(fmt.Sprintf("Binding error: %v", er), http.StatusBadRequest, er)
+		appErr = &newAppErr
+	}
+
+	apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorBadRequest, *appErr)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleValidationError handles validation errors by checking if the error is of type AppError.
+// If it is, it creates an HTTP API error response with a bad request status code and sends it as a JSON response.
+// If the error is not of type AppError, it delegates the error handling to the HandleError function.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//   - err: The error to be handled.
+//
+// Returns:
+//   - HTTP 422 Unprocessable Entity
+func HandleValidationError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+	// Assert that the error is of the custom type that contains app error
+	// appError, ok := err.(*AppError)
+	appError, ok := Find[*AppError](err)
+	if !ok {
+		apperror := NewAppError(err.Error(), http.StatusUnprocessableEntity, err)
+		apiErrorResponse := NewHTTPAPIErrorResponse(AppErrorValidationError, apperror)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+	apiErrorResponse := NewHTTPAPIErrorResponse(AppErrorValidationError, *appError)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleDBError handles database-related errors and maps them to appropriate HTTP responses.
+// It uses the Gin context to send JSON responses based on the type of error encountered.
+//
+// Parameters:
+//   - ctx: The Gin context used to send the JSON response.
+//   - err: The error encountered during database operations.
+//
+// Returns:
+//   - HTTP 500 Internal Server Error: For generic server errors or PostgreSQL errors that
+//     do not match specific cases.
+//   - HTTP 404 Not Found: For "no rows" errors indicating a missing database record.
+//   - HTTP 400 Bad Request: For data-related issues, such as invalid input or data exceptions.
+//   - HTTP 503 Service Unavailable: For database connection exceptions or service unavailability.
+//   - HTTP 409 Conflict: For integrity constraint violations or duplicate records.
+//
+// The function distinguishes between different types of PostgreSQL errors and maps them to
+// corresponding HTTP status codes and error messages. It also handles non-database-related
+// errors or unknown errors by sending a generic server error response.
+func HandleDBError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+
+	// Check if the error is of type AppError.
+	if appErr, ok := Find[*AppError](err); ok {
+		statusCode := appErr.Code
+		statusCodeAndMessage := mapErrorToHTTP(statusCode)
+
+		apiErrorResponse := NewHTTPAPIErrorResponse(statusCodeAndMessage, *appErr)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+
+	var appError AppError
+
+	// Handle specific PostgreSQL error types using a switch statement.
+	switch {
+	case Is(err, context.DeadlineExceeded):
+		appError = NewAppError(DBConnectionException.Message, DBConnectionException.HTTPStatusCode, err)
+		apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+	case Is(err, pgx.ErrNoRows):
+		appError = NewAppError(DBNoData.Message, DBNoData.HTTPStatusCode, err)
+		apiErrorResponse := NewHTTPAPIErrorResponse(DBErrorRecordNotFound, appError)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+	default:
+		// Check if the error is a PostgreSQL error.
+		if pgErr, ok := Find[*pgconn.PgError](err); ok {
+			// Map PostgreSQL error codes to custom dbError codes and messages.
+			switch {
+
+			case pgErr.Code == "42P01": // SQLSTATE for "relation does not exist"
+				appError = NewAppError(DBSyntaxErrororAccessRuleViolation.Message, DBSyntaxErrororAccessRuleViolation.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsCardinalityViolation(pgErr.Code):
+				appError = NewAppError(DBCardinalityViolation.Message, DBCardinalityViolation.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsWarning(pgErr.Code):
+				appError = NewAppError(DBWarning.Message, DBWarning.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsNoData(pgErr.Code):
+				appError = NewAppError(DBNoData.Message, DBNoData.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(DBErrorRecordNotFound, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsIntegrityConstraintViolation(pgErr.Code):
+				appError = NewAppError(DBIntegrityConstraintViolation.Message, DBIntegrityConstraintViolation.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(DBErrorDuplicateRecord, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsSQLStatementNotYetComplete(pgErr.Code):
+				appError = NewAppError(DBSQLStatementNotYetComplete.Message, DBSQLStatementNotYetComplete.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsConnectionException(pgErr.Code):
+				appError = NewAppError(DBConnectionException.Message, DBConnectionException.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServiceUnavailable, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsDataException(pgErr.Code):
+				appError = NewAppError(DBDataException.Message, DBDataException.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorBadRequest, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsTransactionRollback(pgErr.Code):
+				appError = NewAppError(DBTransactionRollback.Message, DBTransactionRollback.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsSyntaxErrororAccessRuleViolation(pgErr.Code):
+				appError = NewAppError(DBSyntaxErrororAccessRuleViolation.Message, DBSyntaxErrororAccessRuleViolation.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsInsufficientResources(pgErr.Code):
+				appError = NewAppError(DBInsufficientResources.Message, DBInsufficientResources.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			// Catch any other PostgreSQL-related errors with a generic message.
+			default:
+				appError = NewAppError(DBGenericError.Message, DBGenericError.HTTPStatusCode, err)
+				apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+			}
+		} else {
+			// Handle non-database-related errors or unknown errors.
+			appError = NewAppError(err.Error(), http.StatusInternalServerError, err)
+			apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+			ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		}
+	}
+}
+
+// HandleError handles errors by creating an application error and an API error response,
+// then sends a JSON response with the appropriate status code and error details.
+//
+// Parameters:
+//   - ctx: The Gin context to send the JSON response.
+//   - err: The error to be handled and converted into an application error and API error response.
+//
+// Returns:
+//
+//	HTTP 500 Internal Server Error
+//
+// If the provided error is nil, the function returns immediately without doing anything.
+func HandleError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+
+	// Check if the error is of type AppError.
+	if appErr, ok := Find[*AppError](err); ok {
+		// Create a structured HTTP response using the AppError.
+		apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, *appErr)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+
+	// Handle other types of errors generically.
+	// Here you can log the error if needed.
+	appError := NewAppError(err.Error(), http.StatusInternalServerError, err)
+	apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleErrorWithCustomMessage handles an error by creating a custom application error
+// with a provided message and the original error. It then constructs an HTTP API error
+// response and sends it as a JSON response with the appropriate status code.
+//
+// Parameters:
+//   - ctx: The Gin context to send the JSON response.
+//   - message: A custom message to include in the application error.
+//   - err: The original error to be handled.
+//
+// Returns:
+//
+//	HTTP 500 Internal Server Error
+//
+// If the provided error is nil, the function returns immediately without doing anything.
+func HandleErrorWithCustomMessage(ctx *gin.Context, message string, err error) {
+	if err == nil {
+		return
+	}
+
+	// Check if the error is of type AppError.
+	if appErr, ok := Find[*AppError](err); ok {
+		// Create a structured HTTP response using the AppError.
+		apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, *appErr)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+
+	appError := NewAppError(message, http.StatusInternalServerError, err)
+	apiErrorResponse := NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleWithMessage handles an error by creating an application error with a given message,
+// then constructs an HTTP API error response and sends it as a JSON response with the appropriate status code.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//   - message: The error message to be included in the application error.
+//
+// Returns:
+//
+//	HTTP 500 Internal Server Error
+//
+// The function creates an application error with the provided message and an internal server error status code.
+// It then creates an HTTP API error response using this application error and sends it as a JSON response
+// with the status code from the API error response.
+func HandleWithMessage(ctx *gin.Context, message string) {
+	respondWithError(ctx, HTTPErrorServerError, message, nil)
+}
+
+// HandleMarshalError handles errors that occur during marshaling.
+// If the provided error is not nil, it creates an application error and an API error response,
+// then sends a JSON response with the appropriate status code and error details.
+//
+// Parameters:
+//   - ctx: The Gin context to send the JSON response.
+//   - err: The error that occurred during marshaling.
+//
+// Returns:
+//
+//	HTTP 400 Bad Request
+func HandleMarshalError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+
+	respondWithError(ctx, HTTPErrorBadRequest, err.Error(), err)
+}
+
+// ValidateContentType is a middleware function for the Gin framework that checks if the request's
+// "Accept" header matches any of the allowed content types. If the content type is not allowed,
+// it returns a structured error response and aborts further request handling.
+//
+// Parameters:
+// - allowedTypes ([]string): A slice of strings representing the allowed content types.
+//
+// Returns:
+//   - gin.HandlerFunc: A Gin handler function that performs the content type validation.
+//   - HTTP 415 Unsupported Media Type
+func ValidateContentType(allowedTypes []string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		contentType := ctx.GetHeader("Accept")
+
+		// Check if the contentType is in the allowedTypes.
+		validContentType := false
+		for _, allowedType := range allowedTypes {
+			if contentType == allowedType {
+				validContentType = true
+				break
+			}
+		}
+
+		// If not valid, return a structured error response.
+		if !validContentType {
+			respondWithError(ctx, HTTPErrorInvalidContentType, fmt.Sprintf("Supported types are: %v", allowedTypes), nil)
+			ctx.Abort() // Prevent further handling of the request.
+			return
+		}
+
+		ctx.Next() // Proceed to the next handler if content type is valid.
+	}
+}
+
+// HandleSizeError handles errors related to payload size exceeding the allowed limit.
+// It creates a new application error with a "Payload too large" message and a "413" status code.
+// The function then constructs an HTTP API error response and sends it as a JSON response.
+//
+// Parameters:
+// - ctx: The Gin context for the current request.
+//
+// Returns:
+//
+//	HTTP 413 File Too Large
+func HandleSizeError(ctx *gin.Context) {
+	respondWithError(ctx, FileErrorTooLarge, "Payload too large.", nil)
+}
+
+// HandleRateLimitingError handles rate limiting errors by creating an application error
+// with a "Too many requests" message and a 429 status code. It then constructs an HTTP
+// API error response and sends it as a JSON response with the appropriate status code.
+//
+// Parameters:
+// - ctx: The Gin context for the current request.
+// Returns:
+//
+//	HTTP 429 Too Many Requests
+func HandleRateLimitingError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorTooManyRequests, "Too many requests. Please try again later.", nil)
+}
+
+// HandleDuplicateEntryError handles errors related to duplicate entries in the application.
+// It creates a new application error with a message indicating that the resource already exists,
+// sets the HTTP status code to 409 (Conflict), and sends a JSON response with the error details.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//
+//	HTTP 409 Conflict
+func HandleDuplicateEntryError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorConflict, "Data conflict occurred while adding/updating. Resource already exists.", nil)
+}
+
+// HandleConnectionError handles connection errors by creating an application error
+// and sending an appropriate HTTP API error response.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//   - err: The error that occurred during the connection attempt.
+//
+// Returns:
+//
+//	HTTP 503 Service Unavailable
+//
+// The function creates a new application error with a message indicating that the
+// service is unavailable and an HTTP status code of 503. It then creates an HTTP
+// API error response using this application error and sends it as a JSON response
+// with the appropriate status code.
+func HandleConnectionError(ctx *gin.Context, err error) {
+	respondWithError(ctx, HTTPErrorServiceUnavailable, "Service unavailable. Please try again later.", err)
+}
+
+// HandleFileTypeError handles errors related to unsupported file types.
+// It creates an application error with a specific message and status code,
+// then constructs an HTTP API error response and sends it as a JSON response.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//
+//	HTTP 415 Invalid Content Type
+func HandleFileTypeError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorInvalidContentType, "Unsupported file type.", nil)
+}
+
+// HandleUnauthorizedError handles unauthorized access errors by creating an
+// application error with a 401 status code and sending an appropriate JSON
+// response to the client.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//
+//	HTTP 401 Unauthorized
+//
+// This function is typically used as a middleware or error handler to ensure
+// that unauthorized access attempts are properly reported to the client.
+func HandleUnauthorizedError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorUnauthorized, "Unauthorized access. Authentication is required.", nil)
+}
+
+// HandleUnauthorizedErrorWithDetail handles unauthorized errors by creating an
+// application-specific error and sending an HTTP response with the appropriate
+// status code and error details.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//   - detail: The error detail to be included in the application error.
+//
+// Returns:
+//
+//	HTTP 401 Unauthorized
+//
+// This function constructs an application error using the provided detail,
+// creates an HTTP API error response with a 401 Unauthorized status code, and
+// sends the response as JSON.
+func HandleUnauthorizedErrorWithDetail(ctx *gin.Context, err error) {
+	respondWithError(ctx, HTTPErrorUnauthorized, err.Error(), err)
+}
+
+// HandleForbiddenError handles forbidden access errors by creating an
+// application-specific error and sending an HTTP 403 Forbidden response
+// with a JSON payload containing the error details.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//   - HTTP 403 Forbidden
+func HandleForbiddenError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorForbidden, "Access to this resource is forbidden. Insufficient permissions.", nil)
+}
+
+// HandleRequestTimeoutError handles request timeout errors by creating an application error
+// with a "Request timed out." message and a "408" status code. It then creates an
+// HTTP API error response with the appropriate status code and sends it as a JSON
+// response.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//   - HTTP 408 Request Timeout
+func HandleRequestTimeoutError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorRequestTimeout, "Request timed out.", nil)
+}
+
+// HandleServiceUnavailableError handles server timeout errors by creating an
+// application error with a 503 status code and sending an appropriate
+// HTTP API error response.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//   - HTTP 503 Service Unavailable
+func HandleServiceUnavailableError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorServiceUnavailable, "Server took too long to respond.", nil)
+}
+
+// HandleGatewayTimeoutError handles the Gateway Timeout error (HTTP 504) by creating an
+// appropriate application error and sending a JSON response with the error details.
+//
+// Parameters:
+//   - ctx: The Gin context for the current request.
+//
+// Returns:
+//   - HTTP 504 Gateway Timeout
+func HandleGatewayTimeoutError(ctx *gin.Context) {
+	respondWithError(ctx, HTTPErrorGatewayTimeout, "Server/Gateway timeout occurred.", nil)
+}
+
+// HandleBulkErrors processes a slice of AppError and sends a JSON response with the appropriate HTTP status code.
+//
+// Parameters:
+//   - ctx: The Gin context to send the JSON response.
+//   - err: A slice of AppError containing the errors to be handled.
+//
+// Returns:
+//   - HTTP 400 Bad Request: If the bulk errors pertain to client-side issues (default behavior).
+//   - The status code may vary if different error mapping logic is used in the implementation.
+func HandleBulkErrors(ctx *gin.Context, err []AppError) {
+	apiErrorResponse := NewHTTPAPIBulkErrorResponse(HTTPErrorBadRequest, err)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// HandleErrorWithStatusCodeAndMessage handles an error by creating an AppError and an HTTPAPIErrorResponse,
+// then sends a JSON response with the appropriate status code and error message.
+//
+// Parameters:
+//   - statusCodeAndMessage: A struct containing the status code and message to be used in the response.
+//   - message: A custom message to be included in the AppError.
+//   - err: The original error that occurred.
+//
+// Returns:
+//   - AppError.
+func HandleErrorWithStatusCodeAndMessage(statusCodeAndMessage statusCodeAndMessage, message string, err error) *AppError {
+	appError := NewAppError(message, statusCodeAndMessage.StatusCode, err)
+	return &appError
+}
+
+func checkDBError(err error) APIErrorResponse {
+
+	var appError AppError
+	var apiErrorResponse APIErrorResponse
+
+	// Handle specific PostgreSQL error types using a switch statement.
+	switch {
+	case Is(err, context.DeadlineExceeded):
+		appError = NewAppError(DBConnectionException.Message, DBConnectionException.HTTPStatusCode, err)
+		apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+		// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+	case Is(err, pgx.ErrNoRows):
+		appError = NewAppError(DBNoData.Message, DBNoData.HTTPStatusCode, err)
+		apiErrorResponse = NewHTTPAPIErrorResponse(DBErrorRecordNotFound, appError)
+		// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+	default:
+		// Check if the error is a PostgreSQL error.
+		if pgErr, ok := Find[*pgconn.PgError](err); ok {
+			// Map PostgreSQL error codes to custom dbError codes and messages.
+			switch {
+
+			case pgErr.Code == "42P01": // SQLSTATE for "relation does not exist"
+				appError = NewAppError(DBSyntaxErrororAccessRuleViolation.Message, DBSyntaxErrororAccessRuleViolation.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsCardinalityViolation(pgErr.Code):
+				appError = NewAppError(DBCardinalityViolation.Message, DBCardinalityViolation.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsWarning(pgErr.Code):
+				appError = NewAppError(DBWarning.Message, DBWarning.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsNoData(pgErr.Code):
+				appError = NewAppError(DBNoData.Message, DBNoData.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(DBErrorRecordNotFound, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsIntegrityConstraintViolation(pgErr.Code):
+				appError = NewAppError(DBIntegrityConstraintViolation.Message, DBIntegrityConstraintViolation.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(DBErrorDuplicateRecord, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsSQLStatementNotYetComplete(pgErr.Code):
+				appError = NewAppError(DBSQLStatementNotYetComplete.Message, DBSQLStatementNotYetComplete.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsConnectionException(pgErr.Code):
+				appError = NewAppError(DBConnectionException.Message, DBConnectionException.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServiceUnavailable, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsDataException(pgErr.Code):
+				appError = NewAppError(DBDataException.Message, DBDataException.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorBadRequest, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsTransactionRollback(pgErr.Code):
+				appError = NewAppError(DBTransactionRollback.Message, DBTransactionRollback.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsSyntaxErrororAccessRuleViolation(pgErr.Code):
+				appError = NewAppError(DBSyntaxErrororAccessRuleViolation.Message, DBSyntaxErrororAccessRuleViolation.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			case pgerrcode.IsInsufficientResources(pgErr.Code):
+				appError = NewAppError(DBInsufficientResources.Message, DBInsufficientResources.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+
+			// Catch any other PostgreSQL-related errors with a generic message.
+			default:
+				appError = NewAppError(DBGenericError.Message, DBGenericError.HTTPStatusCode, err)
+				apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+				// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+			}
+		} else {
+			// Handle non-database-related errors or unknown errors.
+			appError = NewAppError(HTTPErrorServerError.Message, http.StatusInternalServerError, err)
+			apiErrorResponse = NewHTTPAPIErrorResponse(HTTPErrorServerError, appError)
+			// ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		}
+	}
+
+	return apiErrorResponse
+
+}
+
+func HandleCommonError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+
+	// Check if the error is of type AppError.
+	if appErr, ok := Find[*AppError](err); ok {
+		if len(appErr.FieldErrors) > 0 {
+			HandleValidationError(ctx, err)
+			return
+		}
+
+		statusCode := appErr.Code
+		statusCodeAndMessage := mapErrorToHTTP(statusCode)
+
+		apiErrorResponse := NewHTTPAPIErrorResponse(statusCodeAndMessage, *appErr)
+		ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+		return
+	}
+
+	apiErrorResponse := checkDBError(err)
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
+
+// ErrorResponseWithStatusCodeAndMessage handles an error by creating an AppError and an HTTPAPIErrorResponse,
+// then sends a JSON response with the appropriate status code and error message.
+//
+// Parameters:
+//   - ctx: The Gin context to send the JSON response.
+//   - statusCodeAndMessage: A struct containing the status code and message to be used in the response.
+//   - message: A custom message to be included in the AppError.
+//   - err: The original error that occurred.
+//
+// Returns:
+//   - HTTP <statusCode>: The HTTP status code defined in the statusCodeAndMessage struct.
+func ErrorResponseWithStatusCodeAndMessage(ctx *gin.Context, statusCodeAndMessage statusCodeAndMessage, message string, err error) {
+	respondWithError(ctx, statusCodeAndMessage, message, err)
+}
+
+type GoValidError struct {
+	Code          string      `json:"code"`
+	Message       string      `json:"message"`
+	FieldErrors   []string    `json:"field_errors,omitempty"`
+	Stack         *stackTrace `json:"-"`
+	OriginalError error       `json:"-"`
+}
+
+type GoValidAPIErrorResponse struct {
+	statusCodeAndMessage `json:",inline"`
+	GoValidError         GoValidError `json:"error"`
+}
+
+func HandleGoValidError(ctx *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+	errStr := err.Error()
+	splitErrors := strings.Split(errStr, "\n")
+	var fieldErrors []string
+	for _, msg := range splitErrors {
+		fieldErrors = append(fieldErrors, msg)
+	}
+
+	govalErr := &GoValidError{
+		Code:          "422",
+		Message:       "Validation failed",
+		FieldErrors:   fieldErrors,
+		OriginalError: err,
+	}
+
+	apiErrorResponse := &GoValidAPIErrorResponse{
+		statusCodeAndMessage: statusCodeAndMessage{
+			StatusCode: http.StatusUnprocessableEntity,
+			Message:    "Validation failed",
+		},
+		GoValidError: *govalErr,
+	}
+	ctx.JSON(apiErrorResponse.StatusCode, apiErrorResponse)
+}
