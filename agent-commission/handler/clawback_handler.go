@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"agent-commission/core/domain"
@@ -143,9 +144,23 @@ func (h *ClawbackHandler) CreateClawback(
 		clawback.ClawbackAmount,
 	)
 
-	// TODO: Start Temporal workflow for clawback recovery
-	// workflowID := "clawback-" + fmt.Sprintf("%d", clawback.ClawbackID)
-	// h.temporalClient.StartClawbackRecoveryWorkflow(workflowID, clawback)
+	// Start Temporal workflow for clawback recovery
+	// Workflow will handle graduated recovery over time
+	workflowID := fmt.Sprintf("clawback-%d-%s", clawback.ClawbackID, clawback.PolicyNumber)
+	clawback.WorkflowID = &workflowID
+	clawback.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err = h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "clawback-recovery-queue",
+	// }, "ClawbackRecoveryWorkflow", clawback)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting clawback workflow: %v", err)
+	//     return nil, err
+	// }
+
+	log.Info(sctx.Ctx, "Clawback workflow ID: %s", workflowID)
 
 	// Build response
 	resp := &response.CreateClawbackResponse{
@@ -162,4 +177,9 @@ func (h *ClawbackHandler) CreateClawback(
 	resp.Data.WorkflowID = clawback.WorkflowID
 
 	return resp, nil
+}
+
+// ptrString returns a pointer to the given string
+func ptrString(s string) *string {
+	return &s
 }

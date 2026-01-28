@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"time"
+
 	"agent-commission/core/domain"
 	"agent-commission/core/port"
 	"agent-commission/handler/response"
@@ -70,15 +73,23 @@ func (h *CommissionHistoryHandler) SearchCommissionHistory(
 		filter.CommissionStatus = &commStatus
 	}
 
-	// TODO: Parse date filters
-	// if req.FromDate != nil {
-	//     fromDate, _ := time.Parse(time.RFC3339, *req.FromDate)
-	//     filter.FromDate = &fromDate
-	// }
-	// if req.ToDate != nil {
-	//     toDate, _ := time.Parse(time.RFC3339, *req.ToDate)
-	//     filter.ToDate = &toDate
-	// }
+	// Parse date filters
+	if req.FromDate != nil && *req.FromDate != "" {
+		fromDate, err := time.Parse(time.RFC3339, *req.FromDate)
+		if err != nil {
+			log.Warn(sctx.Ctx, "Invalid from_date format: %v", err)
+			return nil, errors.New("invalid from_date format, expected RFC3339")
+		}
+		filter.FromDate = &fromDate
+	}
+	if req.ToDate != nil && *req.ToDate != "" {
+		toDate, err := time.Parse(time.RFC3339, *req.ToDate)
+		if err != nil {
+			log.Warn(sctx.Ctx, "Invalid to_date format: %v", err)
+			return nil, errors.New("invalid to_date format, expected RFC3339")
+		}
+		filter.ToDate = &toDate
+	}
 
 	// Search commission history
 	transactions, totalCount, err := h.repo.SearchCommissionHistory(sctx.Ctx, filter)
@@ -94,11 +105,18 @@ func (h *CommissionHistoryHandler) SearchCommissionHistory(
 		StatusCodeAndMessage: port.ListSuccess,
 	}
 	resp.Data.Transactions = response.NewCommissionHistorySummaries(transactions)
+
+	// Calculate total pages
+	totalPages := 0
+	if filter.Limit > 0 {
+		totalPages = int((totalCount + int64(filter.Limit) - 1) / int64(filter.Limit))
+	}
+
 	resp.Data.Pagination = response.PaginationMetadata{
-		CurrentPage: filter.Page,
-		PageSize:    filter.Limit,
-		TotalCount:  totalCount,
-		TotalPages:  int((totalCount + int64(filter.Limit) - 1) / int64(filter.Limit)),
+		Page:       filter.Page,
+		Limit:      filter.Limit,
+		TotalCount: totalCount,
+		TotalPages: totalPages,
 	}
 
 	return resp, nil

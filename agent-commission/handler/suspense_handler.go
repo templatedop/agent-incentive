@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+
 	"agent-commission/core/domain"
 	"agent-commission/core/port"
 	"agent-commission/handler/response"
@@ -97,9 +99,27 @@ func (h *SuspenseHandler) CreateSuspenseAccount(
 		suspense.ResolutionDeadline,
 	)
 
-	// TODO: Start Temporal workflow for suspense resolution
-	// workflowID := "suspense-" + fmt.Sprintf("%d", suspense.SuspenseID)
-	// h.temporalClient.StartSuspenseResolutionWorkflow(workflowID, suspense)
+	// Start Temporal workflow for suspense resolution
+	// Workflow will handle retry logic and aging tracking
+	agentIDStr := "UNKNOWN"
+	if suspense.AgentID != nil {
+		agentIDStr = *suspense.AgentID
+	}
+	workflowID := fmt.Sprintf("suspense-%d-%s-%s", suspense.SuspenseID, agentIDStr, suspense.SuspenseReason)
+	suspense.WorkflowID = &workflowID
+	suspense.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err = h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "suspense-resolution-queue",
+	// }, "SuspenseResolutionWorkflow", suspense)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting suspense workflow: %v", err)
+	//     return nil, err
+	// }
+
+	log.Info(sctx.Ctx, "Suspense workflow ID: %s", workflowID)
 
 	// TODO: Send notification to assigned user
 	// if suspense.AssignedTo != nil {
@@ -157,4 +177,9 @@ func (h *SuspenseHandler) GetAgingReport(
 	resp.Data.OverdueAmount = report.OverdueAmount
 
 	return resp, nil
+}
+
+// ptrString returns a pointer to the given string
+func ptrString(s string) *string {
+	return &s
 }

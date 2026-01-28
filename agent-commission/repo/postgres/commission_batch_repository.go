@@ -223,6 +223,42 @@ func (r *CommissionBatchRepository) CompleteBatch(
 	return err
 }
 
+// GetCommissionsByPolicyNumber retrieves all commission transactions for a given policy
+// Used for clawback calculation to determine total commission paid
+func (r *CommissionBatchRepository) GetCommissionsByPolicyNumber(
+	ctx context.Context,
+	policyNumber string,
+) ([]domain.CommissionTransaction, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutMedium"))
+	defer cancel()
+
+	q := dblib.Psql.Select(
+		"commission_id",
+		"batch_id",
+		"agent_id",
+		"policy_number",
+		"commission_type",
+		"gross_commission",
+		"tds_amount",
+		"tds_percentage",
+		"net_commission",
+		"commission_status",
+		"due_date",
+		"payment_date",
+		"remarks",
+		"created_at",
+		"updated_at",
+		"created_by",
+		"updated_by",
+		"version",
+	).From("commission_transactions").
+		Where(sq.Eq{"policy_number": policyNumber}).
+		OrderBy("created_at DESC")
+
+	scanFn := pgx.RowToStructByName[domain.CommissionTransaction]
+	return dblib.SelectRows(ctx, r.db, q, scanFn)
+}
+
 // GenerateBatchID generates a unique batch ID for a given month/year
 // Format: BATCH_YYYYMM_NNN
 func GenerateBatchID(month, year int) string {

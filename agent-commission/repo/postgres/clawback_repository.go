@@ -222,7 +222,7 @@ func (r *ClawbackRepository) GetClawbacksByPolicyNumber(
 		OrderBy("trigger_date DESC")
 
 	scanFn := pgx.RowToStructByName[domain.Clawback]
-	return dblib.Select(ctx, r.db, q, scanFn)
+	return dblib.SelectRows(ctx, r.db, q, scanFn)
 }
 
 // SearchClawbacks searches clawbacks with filters
@@ -357,6 +357,7 @@ func (r *ClawbackRepository) UpdateClawbackStatus(
 }
 
 // RecordRecovery records a clawback recovery transaction
+// Uses batch for atomic execution of insert + update
 func (r *ClawbackRepository) RecordRecovery(
 	ctx context.Context,
 	recovery *domain.ClawbackRecovery,
@@ -365,21 +366,18 @@ func (r *ClawbackRepository) RecordRecovery(
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutMedium"))
 	defer cancel()
 
-	// Start transaction if we need to update clawback as well
-	tx, err := r.db.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
 	// Set timestamps
 	now := time.Now()
 	recovery.CreatedAt = now
 	recovery.UpdatedAt = now
 	recovery.Version = 1
 
+	// Create batch for atomic execution
+	batch := &pgx.Batch{}
+	var recoveryID int64
+
 	// Insert recovery record
-	q := dblib.Psql.Insert(clawbackRecoveryTable).Columns(
+	insertQ := dblib.Psql.Insert(clawbackRecoveryTable).Columns(
 		"clawback_id",
 		"installment_number",
 		"scheduled_amount",
@@ -425,17 +423,8 @@ func (r *ClawbackRepository) RecordRecovery(
 		return id, err
 	}
 
-	sql, args, err := q.ToSql()
-	if err != nil {
-		return err
-	}
-
-	row := tx.QueryRow(ctx, sql, args...)
-	recoveryID, err := scanFn(row)
-	if err != nil {
-		return err
-	}
-	recovery.RecoveryID = recoveryID
+	// Queue insert with RETURNING
+	dblib.QueueReturnRow(batch, insertQ, scanFn, &recoveryID)
 
 	// Update clawback amounts if requested
 	if updateClawback && recovery.RecoveryStatus == "COMPLETED" {
@@ -446,18 +435,18 @@ func (r *ClawbackRepository) RecordRecovery(
 			Set("version", sq.Expr("version + 1")).
 			Where(sq.Eq{"clawback_id": recovery.ClawbackID})
 
-		updateSql, updateArgs, err := updateQ.ToSql()
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(ctx, updateSql, updateArgs...)
-		if err != nil {
-			return err
-		}
+		// Queue update
+		dblib.QueueExecRow(batch, updateQ)
 	}
 
-	return tx.Commit(ctx)
+	// Execute batch (implicit transaction)
+	batchResults := r.db.Pool.SendBatch(ctx, batch)
+	defer batchResults.Close()
+
+	// Recovery ID is auto-populated by QueueReturnRow
+	recovery.RecoveryID = recoveryID
+
+	return nil
 }
 
 // GetRecoveriesByClawbackID retrieves all recovery transactions for a clawback
@@ -492,5 +481,5 @@ func (r *ClawbackRepository) GetRecoveriesByClawbackID(
 		OrderBy("installment_number ASC")
 
 	scanFn := pgx.RowToStructByName[domain.ClawbackRecovery]
-	return dblib.Select(ctx, r.db, q, scanFn)
+	return dblib.SelectRows(ctx, r.db, q, scanFn)
 }
