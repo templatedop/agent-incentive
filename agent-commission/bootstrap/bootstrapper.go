@@ -66,6 +66,9 @@ var FxHandler = fx.Module(
 		// Phase 7: Workflow Management (8 APIs)
 		handler.NewWorkflowManagementHandler,
 
+		// Phase 8: Export & Reporting (6 APIs)
+		handler.NewExportHandler,
+
 		// Future phases
 		// etc.
 	),
