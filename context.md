@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 1 - Commission Rate Configuration - IN PROGRESS 🔄
-**Current Module**: Phase 1.1 - Commission Rate Lookup API (COMPLETE ✅)
+**Phase**: Phase 1 - Foundation & Reference Data - COMPLETE ✅
+**Current Module**: Ready for Phase 2 - Commission Processing Core
 **Last Updated**: 2026-01-28
-**Progress**: 3% (1/30 APIs completed) | Infrastructure: 100% | Module 1.1: 100%
+**Progress**: 10% (3/30 APIs completed) | Phase 1: 100% (3/3 APIs)
 
 ### IMPORTANT: Scope Change
 - **Old Scope**: 105 APIs including Agent Profile Management
@@ -80,7 +80,7 @@ The agent onboarding implementation has been moved to backup folder as it's now 
 - ✅ Migration framework ready
 - ✅ Documentation complete
 
-### Phase 1: Foundation & Reference Data [IN PROGRESS]
+### Phase 1: Foundation & Reference Data [✅ COMPLETE]
 
 **Module 1.1: Commission Rate Configuration** (1 API) [✅ COMPLETE]
 - [x] 1.1.1 Domain models: CommissionRate, CommissionRateHistory
@@ -88,11 +88,11 @@ The agent onboarding implementation has been moved to backup folder as it's now 
 - [x] 1.1.3 Handler: commission_rate_handler.go
 - [x] 1.1.4 API: GET /lookup/commission-rates
 
-**Module 1.2: Lookup & Reference APIs** (2 APIs) [⏳ PENDING]
-- [ ] 1.2.1 Repository: Extend reference_data_repository.go
-- [ ] 1.2.2 Handler: lookup_handler.go
-- [ ] 1.2.3 API: GET /lookup/advisor-coordinators
-- [ ] 1.2.4 API: GET /lookup/circles
+**Module 1.2: Lookup & Reference APIs** (2 APIs) [✅ COMPLETE]
+- [x] 1.2.1 Repository: Extended reference_data_repository.go
+- [x] 1.2.2 Handler: lookup_handler.go
+- [x] 1.2.3 API: GET /lookup/advisor-coordinators
+- [x] 1.2.4 API: GET /lookup/circles
 
 **Deliverables (Module 1.1):**
 - ✅ **Domain Models** (`agent-commission/core/domain/commission_rate.go`)
@@ -130,6 +130,27 @@ The agent onboarding implementation has been moved to backup folder as it's now 
   - response.go - StatusCodeAndMessage, MetaDataResponse
   - request.go - MetadataRequest for pagination
   - Copied from template for consistency
+
+**Deliverables (Module 1.2):**
+- ✅ **Repository Extension** (`agent-commission/repo/postgres/reference_data_repository.go`)
+  - GetAllCoordinators - Fetch all active advisor coordinators
+  - Sorted by circle_name, division_name, first_name, last_name
+  - Reuses existing GetAllCircles method
+
+- ✅ **Response DTOs** (`agent-commission/handler/response/lookup.go`)
+  - AdvisorCoordinatorSummary with full name and location details
+  - CircleSummary with code and name
+  - Conversion functions for domain to DTO mapping
+
+- ✅ **HTTP Handler** (`agent-commission/handler/lookup_handler.go`)
+  - GET /lookup/advisor-coordinators - Active coordinators lookup
+  - GET /lookup/circles - All circles lookup
+  - Query parameters: circle, division (optional filters)
+  - Returns structured responses with data wrappers
+
+- ✅ **Bootstrap Integration**
+  - Registered LookupHandler in FxHandler module
+  - Added to serverHandler.Register()
 
 ### Phase 2: Commission Processing Core [NOT STARTED]
 - Module 2.1: Commission Batch Processing (5 APIs)
