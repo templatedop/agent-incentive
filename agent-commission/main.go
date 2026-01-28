@@ -14,7 +14,7 @@ func main() {
 	app := bootstrapper.New().Options(
 		bootstrap.FxHandler,  // Register all HTTP handlers
 		bootstrap.FxRepo,     // Register all repositories
-		// bootstrap.FxWorkflow, // Temporal workflow workers (to be enabled in Phase 1)
+		bootstrap.FxWorkflow, // Temporal workflow workers
 	)
 	app.WithContext(context.Background()).Run()
 }

@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"agent-commission/handler"
 	"agent-commission/repo/postgres"
+	"agent-commission/workflows"
+	"agent-commission/workflows/activities"
 
 	serverHandler "gitlab.cept.gov.in/it-2.0-common/n-api-server/handler"
 	"go.uber.org/fx"
@@ -59,13 +61,21 @@ var FxHandler = fx.Module(
 	),
 )
 
-// FxWorkflow module provides Temporal workflow workers (to be added)
-// This will be populated when we implement Temporal workflows
+// FxWorkflow module provides Temporal workflow workers and activities
 var FxWorkflow = fx.Module(
 	"Workflowmodule",
 	fx.Provide(
-		// Temporal workflow workers will be added here
-		// Example: workflows.NewAgentOnboardingWorker,
-		// Example: workflows.NewCommissionBatchWorker,
+		// Temporal client
+		workflows.NewTemporalClient,
+
+		// Activities
+		activities.NewAgentActivities,
+
+		// Workers
+		workflows.NewTemporalWorker,
+	),
+	fx.Invoke(
+		// Start workers
+		workflows.StartWorker,
 	),
 )
