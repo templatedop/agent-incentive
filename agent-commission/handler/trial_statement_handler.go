@@ -126,17 +126,13 @@ func (h *TrialStatementHandler) ListTrialStatements(
 	return response, nil
 }
 
-// StatementIDUri represents the URI parameter for statement ID
-type StatementIDUri struct {
-	StatementID int64 `uri:"statementId" validate:"required"`
-}
-
 // ApproveTrialStatementRequest represents the request body for approval
 type ApproveTrialStatementRequest struct {
-	Approval struct {
-		DisbursementMode string  `json:"disbursement_mode" validate:"required,oneof=CHEQUE EFT"`
+	StatementID int64 `uri:"statementId" validate:"required"`
+	Approval    struct {
+		DisbursementMode string   `json:"disbursement_mode" validate:"required,oneof=CHEQUE EFT"`
 		PartialAmount    *float64 `json:"partial_amount" validate:"omitempty,gt=0"`
-		Remarks          *string `json:"remarks" validate:"omitempty"`
+		Remarks          *string  `json:"remarks" validate:"omitempty"`
 	} `json:"approval" validate:"required"`
 }
 
@@ -164,14 +160,13 @@ type ApproveTrialStatementRequest struct {
 //   - VR-IC-COM-003: Validation rules
 func (h *TrialStatementHandler) ApproveTrialStatement(
 	sctx *serverRoute.Context,
-	uri StatementIDUri,
 	req ApproveTrialStatementRequest,
 ) (*resp.ApproveTrialStatementResponse, error) {
 	// Fetch trial statement
-	statement, err := h.trialRepo.GetTrialStatementByID(sctx.Ctx, uri.StatementID)
+	statement, err := h.trialRepo.GetTrialStatementByID(sctx.Ctx, req.StatementID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			log.Warn(sctx.Ctx, "Trial statement not found: %d", uri.StatementID)
+			log.Warn(sctx.Ctx, "Trial statement not found: %d", req.StatementID)
 			return nil, errors.New("trial statement not found")
 		}
 		log.Error(sctx.Ctx, "Error fetching trial statement: %v", err)
@@ -180,7 +175,7 @@ func (h *TrialStatementHandler) ApproveTrialStatement(
 
 	// Check if statement can be approved
 	if !statement.CanApprove() {
-		log.Warn(sctx.Ctx, "Trial statement cannot be approved: %d (status: %s)", uri.StatementID, statement.StatementStatus)
+		log.Warn(sctx.Ctx, "Trial statement cannot be approved: %d (status: %s)", req.StatementID, statement.StatementStatus)
 		return nil, errors.New("trial statement cannot be approved")
 	}
 
@@ -188,13 +183,13 @@ func (h *TrialStatementHandler) ApproveTrialStatement(
 	approvedBy := "system" // Replace with actual user from JWT
 
 	// Approve statement
-	err = h.trialRepo.ApproveTrialStatement(sctx.Ctx, uri.StatementID, approvedBy, req.Approval.Remarks)
+	err = h.trialRepo.ApproveTrialStatement(sctx.Ctx, req.StatementID, approvedBy, req.Approval.Remarks)
 	if err != nil {
 		log.Error(sctx.Ctx, "Error approving trial statement: %v", err)
 		return nil, err
 	}
 
-	log.Info(sctx.Ctx, "Trial statement approved: %d by %s", uri.StatementID, approvedBy)
+	log.Info(sctx.Ctx, "Trial statement approved: %d by %s", req.StatementID, approvedBy)
 
 	// TODO: Trigger final statement generation workflow
 	// finalStmtID, err := h.temporalClient.StartFinalStatementWorkflow(ctx, statement)
@@ -204,7 +199,7 @@ func (h *TrialStatementHandler) ApproveTrialStatement(
 	response := &resp.ApproveTrialStatementResponse{
 		StatusCodeAndMessage: port.UpdateSuccess,
 		Data: resp.ApprovalResponse{
-			StatementID: uri.StatementID,
+			StatementID: req.StatementID,
 			Status:      string(domain.TrialStatementStatusApproved),
 			ApprovedBy:  approvedBy,
 			ApprovedAt:  now.Format(time.RFC3339),

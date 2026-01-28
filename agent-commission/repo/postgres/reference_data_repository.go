@@ -27,6 +27,7 @@ const (
 	circleTable      = "ref_circles"
 	divisionTable    = "ref_divisions"
 	productPlanTable = "ref_product_plans"
+	agentProfileTable = "agent_profiles"
 )
 
 // GetAllCircles retrieves all active circles

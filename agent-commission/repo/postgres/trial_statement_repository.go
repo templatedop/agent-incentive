@@ -69,7 +69,13 @@ func (r *TrialStatementRepository) CreateTrialStatement(
 		stmt.WorkflowState,
 	).Suffix("RETURNING trial_statement_id")
 
-	return dblib.QueryRow(ctx, r.db, q, &stmt.TrialStatementID)
+	scanFn := func(row pgx.Row) (int64, error) {
+		var id int64
+		err := row.Scan(&id)
+		return id, err
+	}
+
+	return dblib.InsertReturning(ctx, r.db, q, scanFn, &stmt.TrialStatementID)
 }
 
 // GetTrialStatementByID retrieves a trial statement by ID
@@ -229,7 +235,7 @@ func (r *TrialStatementRepository) ApproveTrialStatement(
 			sq.Eq{"deleted_at": nil},
 		})
 
-	return dblib.Exec(ctx, r.db, q)
+	return dblib.Update(ctx, r.db, q)
 }
 
 // GenerateStatementNumber generates a unique statement number

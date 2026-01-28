@@ -61,7 +61,13 @@ func (r *FinalStatementRepository) CreateFinalStatement(
 		stmt.WorkflowState,
 	).Suffix("RETURNING final_statement_id")
 
-	return dblib.QueryRow(ctx, r.db, q, &stmt.FinalStatementID)
+	scanFn := func(row pgx.Row) (int64, error) {
+		var id int64
+		err := row.Scan(&id)
+		return id, err
+	}
+
+	return dblib.InsertReturning(ctx, r.db, q, scanFn, &stmt.FinalStatementID)
 }
 
 // GetFinalStatementByID retrieves a final statement by ID
@@ -197,7 +203,7 @@ func (r *FinalStatementRepository) UpdateStatementStatus(
 			sq.Eq{"deleted_at": nil},
 		})
 
-	return dblib.Exec(ctx, r.db, q)
+	return dblib.Update(ctx, r.db, q)
 }
 
 // GenerateFinalStatementNumber generates a unique statement number
