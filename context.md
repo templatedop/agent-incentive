@@ -2,10 +2,17 @@
 
 ## Current Status
 
-**Phase**: Phase 0 - COMPLETE ✅ | Phase 1 - IN PROGRESS 🔄
-**Current Module**: Phase 1.1 - Agent Onboarding (Tasks 1-7 COMPLETE, Task 8 PENDING)
+**Phase**: Phase 1 - Commission Rate Configuration - IN PROGRESS 🔄
+**Current Module**: Phase 1.1 - Commission Rate Lookup API (COMPLETE ✅)
 **Last Updated**: 2026-01-28
-**Progress**: 6% (6/105 APIs completed) | Infrastructure: 100% | Module 1.1: 88% (7/8 tasks)
+**Progress**: 3% (1/30 APIs completed) | Infrastructure: 100% | Module 1.1: 100%
+
+### IMPORTANT: Scope Change
+- **Old Scope**: 105 APIs including Agent Profile Management
+- **New Scope**: 30 APIs - Commission & Incentive ONLY
+- **Agent Profile Management**: Moved to complete-pli-agent project (OUT OF SCOPE)
+- **New Plan**: `/home/user/agent-incentive/plan_revised_incentive_only.md`
+- **Swagger**: `/home/user/agent-incentive/Incentive/swagger/swagger_incentive.yaml`
 
 ---
 
@@ -21,10 +28,12 @@
 - **Architecture**: Hexagonal/Ports-and-Adapters
 
 ### Key Documents
-- **Plan**: `/home/user/agent-incentive/plan.md`
+- **Plan (REVISED)**: `/home/user/agent-incentive/plan_revised_incentive_only.md` ⭐
+- **Original Plan**: `/home/user/agent-incentive/plan.md` (DEPRECATED)
 - **Requirements**: `/home/user/agent-incentive/Incentive/analysis/IC_Incentive_Commission_Producer_Management_Analysis.md`
 - **SRS**: `/home/user/agent-incentive/Incentive/srs/Agent_SRS_Incentive-Commission-and-Producer-Management.md`
-- **Swagger**: `/home/user/agent-incentive/Incentive/swagger/swagger.yaml`
+- **Swagger (Commission Only)**: `/home/user/agent-incentive/Incentive/swagger/swagger_incentive.yaml` ⭐
+- **Swagger (Full - OLD)**: `/home/user/agent-incentive/Incentive/swagger/swagger.yaml` (DEPRECATED)
 - **Database Schema**: `/home/user/agent-incentive/Incentive/db/schema.sql`
 - **Template**: `/home/user/agent-incentive/Incentive/template.md`
 - **DB Library README**: `/home/user/agent-incentive/Incentive/db-README.md`
@@ -36,7 +45,19 @@
 
 ---
 
-## Implementation Progress
+## Agent Onboarding Code - BACKED UP
+
+The agent onboarding implementation has been moved to backup folder as it's now handled by complete-pli-agent:
+- **Location**: `/home/user/agent-incentive/agent-commission/backup_agent_onboarding/`
+- **Contents**:
+  - agent_onboarding.go (handler with 6 APIs)
+  - agent_wrappers.go (response DTOs)
+  - workflows/ (Temporal workflow + 8 activities)
+- **Reason**: Agent profile management is out of scope for this commission-only module
+
+---
+
+## Implementation Progress (REVISED)
 
 ### Phase 0: Project Foundation & Setup [✅ COMPLETE]
 - [x] 0.1 Create project directory structure
@@ -59,139 +80,80 @@
 - ✅ Migration framework ready
 - ✅ Documentation complete
 
-### Phase 1: Agent Onboarding & Profile Management [IN PROGRESS]
-**Module 1.1: Agent Onboarding** (6 APIs)
-- [x] 1.1.1 Read requirements
-- [x] 1.1.2 Pattern decisions
-- [x] 1.1.3 Domain models
-- [x] 1.1.4 DTOs
-- [x] 1.1.5 Repository (REFACTORED with batch optimization)
-- [x] 1.1.6 Temporal workflow
-- [x] 1.1.7 Handler
-- [ ] 1.1.8 Unit tests
+### Phase 1: Foundation & Reference Data [IN PROGRESS]
 
-**Deliverables (Module 1.1 - Tasks 1-7):**
-- ✅ **Domain Models** (`agent-commission/core/domain/`)
-  - agent_profile.go (AgentProfile entity with 30+ fields)
-  - agent_address.go (Address management)
-  - agent_contact.go (Contact numbers with WhatsApp support)
-  - agent_email.go (Email with verification)
-  - agent_hierarchy.go (Advisor-Coordinator relationships)
-  - reference_data.go (Circle, Division, ProductPlan)
-  - All with BR/VR/FR traceability comments
+**Module 1.1: Commission Rate Configuration** (1 API) [✅ COMPLETE]
+- [x] 1.1.1 Domain models: CommissionRate, CommissionRateHistory
+- [x] 1.1.2 Repository: commission_rate_repository.go
+- [x] 1.1.3 Handler: commission_rate_handler.go
+- [x] 1.1.4 API: GET /lookup/commission-rates
 
-- ✅ **Request/Response DTOs** (`agent-commission/handler/`)
-  - request.go - 11 request structures with validation tags
-  - response/agent.go - 15 response structures
-  - response/agent_wrappers.go - Response wrappers with port.StatusCodeAndMessage
-  - Complete coverage for all onboarding workflows
+**Module 1.2: Lookup & Reference APIs** (2 APIs) [⏳ PENDING]
+- [ ] 1.2.1 Repository: Extend reference_data_repository.go
+- [ ] 1.2.2 Handler: lookup_handler.go
+- [ ] 1.2.3 API: GET /lookup/advisor-coordinators
+- [ ] 1.2.4 API: GET /lookup/circles
 
-- ✅ **Repository Layer** (`agent-commission/repo/postgres/`)
-  - agent_profile_repository.go (~500 lines)
-    - CreateAgentProfileWithRelations (batch optimized)
-    - GetAgentByID (batch optimized)
-    - SearchAgents (batch optimized - count + results in 1 round trip)
-    - UpdateAgentProfile, UpdateAgentStatus
-    - CheckPANExists, GetCoordinatorByID
-    - GenerateAgentCode
-  - agent_hierarchy_repository.go (~160 lines)
-    - CreateHierarchyRelationship
-    - GetActiveCoordinatorForAgent
-    - GetSubordinatesForCoordinator
-    - UpdateHierarchyRelationship (batch optimized)
-  - reference_data_repository.go (~230 lines)
-    - GetAllCircles, GetCircleByID
-    - GetDivisionsByCircle, GetDivisionByID
-    - GetAllProductPlans, GetActiveProductPlans
+**Deliverables (Module 1.1):**
+- ✅ **Domain Models** (`agent-commission/core/domain/commission_rate.go`)
+  - CommissionRate entity with all required fields
+  - CommissionRateHistory for audit trail
+  - CommissionRateFilter for query filtering
+  - ProductType enum (PLI, RPLI)
+  - IsActiveOn() method for date-based validation
+  - Implements: BR-IC-COM-006, FR-IC-COM-001
 
-- ✅ **Temporal Workflow** (`agent-commission/workflows/`)
-  - agent_onboarding_workflow.go - WF-IC-ONB-001 implementation
-    - 8-step workflow orchestration
-    - Handles all agent types with conditional logic
-    - BR-IC-AH-001: Advisor-Coordinator validation
-    - BR-IC-AH-003: HRMS integration (stub)
-    - VR-IC-PROF-002: PAN uniqueness validation
-  - activities/agent_activities.go - 8 activities
-    - ValidateAgentInputActivity, CheckPANExistsActivity
-    - FetchEmployeeFromHRMSActivity (TODO: actual integration)
-    - ValidateCoordinatorActivity, GenerateAgentCodeActivity
-    - CreateAgentProfileActivity, CreateHierarchyActivity
-    - SendOnboardingNotificationActivity (TODO: actual integration)
-  - types.go - Workflow input/output types
-  - temporal_client.go - Temporal client configuration
-  - worker.go - Worker registration with task queue
+- ✅ **Response DTOs** (`agent-commission/handler/response/commission_rate.go`)
+  - CommissionRateResponse with ISO 8601 date formatting
+  - CommissionRatesListResponse with structured data wrapper
+  - Conversion functions: NewCommissionRateResponse, NewCommissionRatesResponse
 
-- ✅ **HTTP Handler Layer** (`agent-commission/handler/`)
-  - agent_onboarding.go - 6 API endpoints
-    - POST /v1/agents/onboard - Agent onboarding with workflow
-    - GET /v1/agents/:id - Get agent profile
-    - GET /v1/agents - Search agents with filters
-    - PUT /v1/agents/:id - Update agent profile
-    - PUT /v1/agents/:id/status - Update agent status
-    - PUT /v1/agents/:id/coordinator - Assign/change coordinator
-  - Plain Go functions: func(sctx *serverRoute.Context, req Type) (*RespType, error)
-  - Integrated with Temporal client for workflow execution
+- ✅ **Repository Layer** (`agent-commission/repo/postgres/commission_rate_repository.go`)
+  - GetCommissionRates - Filter by product_type, agent_type, plan_code
+  - GetCommissionRateByID - Single rate lookup
+  - GetApplicableRate - Find rate for specific policy parameters
+  - Uses dblib.SelectRows and dblib.Psql patterns
+  - Timeout handling with cfg.GetDuration("db.QueryTimeoutLow")
 
-- ✅ **Bootstrap Integration**
-  - Updated bootstrap/bootstrapper.go with 3 modules:
-    - FxRepo: Registered all repositories
-    - FxWorkflow: Temporal client, activities, worker
-    - FxHandler: Agent onboarding handler
-  - Updated main.go to enable workflow module
+- ✅ **HTTP Handler** (`agent-commission/handler/commission_rate_handler.go`)
+  - GET /lookup/commission-rates - Query commission rates
+  - Query parameters: product_type (PLI/RPLI), agent_type, plan_code
+  - Returns CommissionRatesListResponse with port.ListSuccess
+  - Plain Go function pattern: func(sctx, req) (*resp, error)
 
-- ✅ **Critical Learning: Batch Optimization**
-  - Refactored all multi-query operations to use pgx.Batch
-  - Eliminated explicit transactions (WithTx) - using batch's implicit transaction
-  - Reduced database round trips by 50-75%
-  - Documented batch patterns in context.md
+- ✅ **Bootstrap Integration** (`agent-commission/bootstrap/bootstrapper.go`)
+  - Registered CommissionRateRepository in FxRepo
+  - Registered CommissionRateHandler in FxHandler
+  - Handler registered with serverHandler.Register()
 
-**Module 1.2: Agent Profile Management** (6 APIs)
-- [ ] Not started
+- ✅ **Port Types** (`agent-commission/core/port/`)
+  - response.go - StatusCodeAndMessage, MetaDataResponse
+  - request.go - MetadataRequest for pagination
+  - Copied from template for consistency
 
-**Module 1.3: Agent Termination** (3 APIs)
-- [ ] Not started
+### Phase 2: Commission Processing Core [NOT STARTED]
+- Module 2.1: Commission Batch Processing (5 APIs)
+- Module 2.2: Trial Statement Management (2 APIs)
+- Module 2.3: Final Statement Generation (1 API)
 
-### Phase 2: License Management [NOT STARTED]
-- APIs: 10 endpoints
-- Status: Not started
+### Phase 3: Commission Disbursement [NOT STARTED]
+- Module 3.1: Disbursement Processing (2 APIs)
+- Module 3.2: Integration Webhooks (2 APIs)
 
-### Phase 3: Commission Rate Configuration [NOT STARTED]
-- APIs: 6 endpoints
-- Status: Not started
+### Phase 4: Commission History & Inquiry [NOT STARTED]
+- Module 4.1: Commission History (1 API)
 
-### Phase 4: Commission Calculation & Processing [NOT STARTED]
-- APIs: 18 endpoints
-- Status: Not started
+### Phase 5: Clawback Management [NOT STARTED]
+- Module 5.1: Commission Clawback (1 API)
 
-### Phase 5: Commission Disbursement [NOT STARTED]
-- APIs: 12 endpoints
-- Status: Not started
+### Phase 6: Suspense Account Management [NOT STARTED]
+- Module 6.1: Suspense Accounts (2 APIs)
 
-### Phase 6: Commission History & Search [NOT STARTED]
-- APIs: 8 endpoints
-- Status: Not started
+### Phase 7: Workflow Management [NOT STARTED]
+- Module 7.1: Workflow Status & Control (8 APIs)
 
-### Phase 7: Commission Clawback [NOT STARTED]
-- APIs: 7 endpoints
-- Status: Not started
-
-### Phase 8: Suspense Account Management [NOT STARTED]
-- APIs: 11 endpoints
-- Status: Not started
-
-### Phase 9: Lookup & Reference Data [NOT STARTED]
-- APIs: 10 endpoints
-- Status: Not started
-
-### Phase 10: Export, Reports & Webhooks [NOT STARTED]
-- APIs: 10 endpoints
-- Status: Not started
-
-### Phase 11: Integration Testing [NOT STARTED]
-- Status: Not started
-
-### Phase 12: Documentation & Deployment [NOT STARTED]
-- Status: Not started
+### Phase 8: Export & Reporting [NOT STARTED]
+- Module 8.1: Export APIs (6 APIs)
 
 ---
 
