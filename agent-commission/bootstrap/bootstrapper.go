@@ -27,14 +27,19 @@ var FxRepo = fx.Module(
 var FxHandler = fx.Module(
 	"Handlermodule",
 	fx.Provide(
-		// Phase 1: Commission Rate Configuration
+		// Phase 1: Commission Rate Configuration & Lookup
 		handler.NewCommissionRateHandler,
+		handler.NewLookupHandler,
 		// Phase 2: Commission Batch Processing
 		// Phase 3: Disbursement
 		// etc.
 	),
-	fx.Invoke(func(h *handler.CommissionRateHandler) {
-		serverHandler.Register(h)
+	fx.Invoke(func(
+		commissionRateHandler *handler.CommissionRateHandler,
+		lookupHandler *handler.LookupHandler,
+	) {
+		serverHandler.Register(commissionRateHandler)
+		serverHandler.Register(lookupHandler)
 	}),
 )
 

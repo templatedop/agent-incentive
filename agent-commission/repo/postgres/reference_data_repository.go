@@ -177,3 +177,22 @@ func (r *ReferenceDataRepository) GetCoordinatorsByDivision(ctx context.Context,
 
 	return dblib.SelectRows(ctx, r.db, q, pgx.RowToStructByName[domain.AgentProfile])
 }
+
+// GetAllCoordinators retrieves all active advisor coordinators
+// API: GET /lookup/advisor-coordinators
+// Used for dropdown/autocomplete in agent assignment
+func (r *ReferenceDataRepository) GetAllCoordinators(ctx context.Context) ([]domain.AgentProfile, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
+	defer cancel()
+
+	q := dblib.Psql.Select(
+		"agent_profile_id", "agent_code", "first_name", "middle_name", "last_name",
+		"circle_id", "circle_name", "division_id", "division_name", "status",
+	).From(agentProfileTable).Where(sq.And{
+		sq.Eq{"agent_type": domain.AgentTypeAdvisorCoordinator},
+		sq.Eq{"status": domain.AgentStatusActive},
+		sq.Eq{"deleted_at": nil},
+	}).OrderBy("circle_name ASC", "division_name ASC", "first_name ASC", "last_name ASC")
+
+	return dblib.SelectRows(ctx, r.db, q, pgx.RowToStructByName[domain.AgentProfile])
+}
