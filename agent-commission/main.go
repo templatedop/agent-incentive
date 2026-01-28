@@ -12,9 +12,9 @@ import (
 // It initializes and starts the server with all dependencies using Uber FX
 func main() {
 	app := bootstrapper.New().Options(
-		bootstrap.FxHandler,  // Register all HTTP handlers
-		bootstrap.FxRepo,     // Register all repositories
-		bootstrap.FxWorkflow, // Temporal workflow workers
+		bootstrap.FxHandler, // Register all HTTP handlers
+		bootstrap.FxRepo,    // Register all repositories
+		// bootstrap.FxWorkflow, // Temporal workflow workers (will be enabled when implementing commission workflows)
 	)
 	app.WithContext(context.Background()).Run()
 }
