@@ -108,3 +108,18 @@ func (ct *CommissionTransaction) CalculateNetCommission() {
 	ct.TDSAmount = (ct.GrossCommission * ct.TDSRate) / 100
 	ct.NetCommission = ct.GrossCommission - ct.TDSAmount
 }
+
+// CommissionHistoryFilter represents filter criteria for commission history search
+// FR-IC-COM-011: Commission history inquiry
+// BR-IC-COM-009: History filtering and pagination
+type CommissionHistoryFilter struct {
+	AgentID          *string           `json:"agent_id" query:"agent_id"`
+	PolicyNumber     *string           `json:"policy_number" query:"policy_number"`
+	CommissionType   *CommissionType   `json:"commission_type" query:"commission_type"`
+	CommissionStatus *CommissionStatus `json:"commission_status" query:"commission_status"`
+	FromDate         *time.Time        `json:"from_date" query:"from_date"`
+	ToDate           *time.Time        `json:"to_date" query:"to_date"`
+	BatchID          *string           `json:"batch_id" query:"batch_id"`
+	Page             int               `json:"page" query:"page"`
+	Limit            int               `json:"limit" query:"limit"`
+}

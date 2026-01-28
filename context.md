@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 3 - Commission Disbursement - COMPLETE ✅
-**Current Module**: Ready for Phase 4/5/6 - Commission History, Clawback & Suspense
+**Phase**: Phase 6 - Suspense Account Management - COMPLETE ✅
+**Current Module**: Ready for Phase 7 - Workflow Management
 **Last Updated**: 2026-01-28
-**Progress**: 40% (12/30 APIs completed) | Phase 1: ✅ (3 APIs) | Phase 2: ✅ (5 APIs) | Phase 3: ✅ (4 APIs)
+**Progress**: 60% (18/30 APIs completed) | Phase 1-3: ✅ (12 APIs) | Phase 4-6: ✅ (4 APIs)
 
 ### IMPORTANT: Scope Change
 - **Old Scope**: 105 APIs including Agent Profile Management
@@ -283,14 +283,124 @@ The agent onboarding implementation has been moved to backup folder as it's now 
 - Clawback trigger marked as TODO
 - All queries use batch optimization patterns
 
-### Phase 4: Commission History & Inquiry [NOT STARTED]
-- Module 4.1: Commission History (1 API)
+### Phase 4: Commission History & Inquiry [✅ COMPLETE]
 
-### Phase 5: Clawback Management [NOT STARTED]
-- Module 5.1: Commission Clawback (1 API)
+**Module 4.1: Commission History** (1 API) [✅ COMPLETE]
+- [x] 4.1.1 Domain filter: CommissionHistoryFilter
+- [x] 4.1.2 Repository: commission_history_repository.go
+- [x] 4.1.3 Handler: commission_history_handler.go
+- [x] 4.1.4 API: GET /commissions/history
 
-### Phase 6: Suspense Account Management [NOT STARTED]
-- Module 6.1: Suspense Accounts (2 APIs)
+**Deliverables (Phase 4):**
+- ✅ **Domain Filter** (`commission_batch.go`)
+  - CommissionHistoryFilter for query parameters
+  - Supports filters: agent_id, policy_number, commission_type, status, date range, batch_id
+  - Implements: FR-IC-COM-011, BR-IC-COM-009
+
+- ✅ **Repository Layer** (`commission_history_repository.go` - 132 lines)
+  - SearchCommissionHistory (batch optimized count + results)
+  - Flexible filtering with 8 query parameters
+  - Pagination support
+
+- ✅ **Response DTOs** (`response/commission_history.go`)
+  - CommissionHistorySummary for list views
+  - CommissionHistoryResponse with pagination
+
+- ✅ **HTTP Handler** (`commission_history_handler.go`)
+  - GET /commissions/history - Search commission transaction history
+  - Query parameters: agent_id, policy_number, commission_type, commission_status, from_date, to_date, batch_id, page, limit
+
+- ✅ **Bootstrap Integration**
+  - Registered CommissionHistoryRepository and CommissionHistoryHandler
+
+### Phase 5: Clawback Management [✅ COMPLETE]
+
+**Module 5.1: Commission Clawback** (1 API) [✅ COMPLETE]
+- [x] 5.1.1 Domain models: Clawback, ClawbackRecovery
+- [x] 5.1.2 Repository: clawback_repository.go
+- [x] 5.1.3 Handler: clawback_handler.go
+- [x] 5.1.4 API: POST /commissions/clawback/create
+
+**Deliverables (Phase 5):**
+- ✅ **Domain Models** (`clawback.go` - 260 lines)
+  - Clawback entity with graduated recovery tracking
+  - ClawbackRecovery entity for installment tracking
+  - ClawbackStatus enum (PENDING, IN_PROGRESS, COMPLETED, PARTIAL, WAIVED, WRITE_OFF)
+  - ClawbackReason enum (5 types)
+  - CalculateClawbackPercentage() - BR-IC-CLAWBACK-002: Year 1: 100%, Year 2: 75%, Year 3: 50%, Year 4: 25%, Year 5+: 0%
+  - Business methods: IsFullyRecovered(), CanRecover(), RecoveryProgress()
+  - Implements: FR-IC-COM-012, BR-IC-CLAWBACK-001, BR-IC-CLAWBACK-002
+
+- ✅ **Repository Layer** (`clawback_repository.go` - 400+ lines)
+  - CreateClawback with auto percentage calculation
+  - SearchClawbacks (batch optimized count + results)
+  - RecordRecovery with transaction support
+  - GetRecoveriesByClawbackID
+  - UpdateClawbackStatus
+
+- ✅ **Response DTOs** (`response/clawback.go` - 250 lines)
+  - ClawbackDetailResponse with recovery progress
+  - ClawbackSummary for list views
+  - ClawbackRecoveryDetail for recovery transactions
+
+- ✅ **HTTP Handler** (`clawback_handler.go`)
+  - POST /commissions/clawback/create - Initiate clawback
+  - Calculates total commission paid, applies graduated percentage
+  - Recovery schedule: IMMEDIATE or INSTALLMENT
+
+- ✅ **Bootstrap Integration**
+  - Registered ClawbackRepository and ClawbackHandler
+
+**Notes:**
+- Clawback workflow integration marked as TODO
+- Graduated clawback percentage based on policy age in months
+
+### Phase 6: Suspense Account Management [✅ COMPLETE]
+
+**Module 6.1: Suspense Accounts** (2 APIs) [✅ COMPLETE]
+- [x] 6.1.1 Domain models: SuspenseAccount, SuspenseTransaction
+- [x] 6.1.2 Repository: suspense_repository.go
+- [x] 6.1.3 Handler: suspense_handler.go
+- [x] 6.1.4 APIs: POST /commissions/suspense/create, GET /commissions/suspense/aging-report
+
+**Deliverables (Phase 6):**
+- ✅ **Domain Models** (`suspense.go` - 250 lines)
+  - SuspenseAccount entity with aging tracking
+  - SuspenseTransaction audit trail
+  - SuspenseStatus enum (OPEN, RESOLVED, WRITE_OFF)
+  - SuspenseReason enum (10 types)
+  - SuspenseAgingBucket, SuspenseAgingReport structures
+  - GetAgingBucket() - BR-IC-SUS-002: 0-30, 31-60, 61-90, 91-180, 180+ days
+  - CalculateResolutionDeadline() - BR-IC-SUS-003: HIGH: 7d, MEDIUM: 15d, LOW: 30d
+  - DeterminePriority() - BR-IC-SUS-004: Auto-priority based on amount and reason
+  - Implements: FR-IC-COM-013, BR-IC-SUS-001
+
+- ✅ **Repository Layer** (`suspense_repository.go` - 450+ lines)
+  - CreateSuspenseAccount with auto priority and deadline
+  - SearchSuspenseAccounts (batch optimized count + results)
+  - GetAgingReport - Generates bucket distribution with SQL aggregation
+  - ResolveSuspenseAccount, WriteOffSuspenseAccount
+  - createSuspenseTransaction for audit trail
+
+- ✅ **Response DTOs** (`response/suspense.go` - 230 lines)
+  - SuspenseAccountDetailResponse with aging bucket and overdue flag
+  - SuspenseAccountSummary for list views
+  - SuspenseAgingBucketResponse, SuspenseAgingReportResponse
+  - Time-based calculations (aging days, overdue status)
+
+- ✅ **HTTP Handler** (`suspense_handler.go`)
+  - POST /commissions/suspense/create - Create suspense entry
+  - GET /commissions/suspense/aging-report - Aging distribution report
+  - Auto-priority assignment based on amount and reason
+
+- ✅ **Bootstrap Integration**
+  - Registered SuspenseRepository and SuspenseHandler
+
+**Notes:**
+- Aging report uses raw SQL for efficient aggregation
+- Priority auto-determined: HIGH (≥50k or critical), MEDIUM (≥10k), LOW (<10k)
+- Resolution SLA based on priority: HIGH: 7 days, MEDIUM: 15 days, LOW: 30 days
+- Suspense workflow integration marked as TODO
 
 ### Phase 7: Workflow Management [NOT STARTED]
 - Module 7.1: Workflow Status & Control (8 APIs)
