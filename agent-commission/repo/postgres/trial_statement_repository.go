@@ -76,7 +76,7 @@ func (r *TrialStatementRepository) CreateTrialStatement(
 func (r *TrialStatementRepository) GetTrialStatementByID(
 	ctx context.Context,
 	statementID int64,
-) (*domain.TrialStatement, error) {
+) (domain.TrialStatement, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -194,28 +194,12 @@ func (r *TrialStatementRepository) SearchTrialStatements(
 	scanFn := pgx.RowToStructByName[domain.TrialStatement]
 	dblib.QueueReturn(batch, resultsQuery, scanFn, &statements)
 
-	// Execute batch
+	// Execute batch - QueueReturn functions already populate the pointers
 	batchResults := r.db.Pool.SendBatch(ctx, batch)
 	defer batchResults.Close()
 
-	// Process count result
-	_, err := dblib.ScanOne(batchResults.QueryRow(), scanCountFn)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Process results
-	rows, err := batchResults.Query()
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	statements, err = pgx.CollectRows(rows, scanFn)
-	if err != nil {
-		return nil, 0, err
-	}
-
+	// QueueReturnRow and QueueReturn have already populated totalCount and statements
+	// No need for manual processing
 	return statements, totalCount, nil
 }
 

@@ -95,7 +95,7 @@ func (r *CommissionRateRepository) GetCommissionRates(
 
 // GetCommissionRateByID retrieves a specific commission rate by ID
 // Used for rate lookup in commission calculation
-func (r *CommissionRateRepository) GetCommissionRateByID(ctx context.Context, rateID int64) (*domain.CommissionRate, error) {
+func (r *CommissionRateRepository) GetCommissionRateByID(ctx context.Context, rateID int64) (domain.CommissionRate, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -130,7 +130,7 @@ func (r *CommissionRateRepository) GetApplicableRate(
 	agentType string,
 	planCode string,
 	policyTermYears int,
-) (*domain.CommissionRate, error) {
+) (domain.CommissionRate, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 

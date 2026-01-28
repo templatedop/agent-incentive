@@ -68,7 +68,7 @@ func (r *FinalStatementRepository) CreateFinalStatement(
 func (r *FinalStatementRepository) GetFinalStatementByID(
 	ctx context.Context,
 	statementID int64,
-) (*domain.FinalStatement, error) {
+) (domain.FinalStatement, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -170,28 +170,12 @@ func (r *FinalStatementRepository) SearchFinalStatements(
 	scanFn := pgx.RowToStructByName[domain.FinalStatement]
 	dblib.QueueReturn(batch, resultsQuery, scanFn, &statements)
 
-	// Execute batch
+	// Execute batch - QueueReturn functions already populate the pointers
 	batchResults := r.db.Pool.SendBatch(ctx, batch)
 	defer batchResults.Close()
 
-	// Process count result
-	_, err := dblib.ScanOne(batchResults.QueryRow(), scanCountFn)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Process results
-	rows, err := batchResults.Query()
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	statements, err = pgx.CollectRows(rows, scanFn)
-	if err != nil {
-		return nil, 0, err
-	}
-
+	// QueueReturnRow and QueueReturn have already populated totalCount and statements
+	// No need for manual processing
 	return statements, totalCount, nil
 }
 
