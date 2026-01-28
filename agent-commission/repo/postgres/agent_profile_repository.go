@@ -37,7 +37,8 @@ const (
 // Uses pgx.Batch to insert profile, addresses, contacts, and emails atomically
 // FR-IC-PROF-001: Agent profile creation
 // FR-IC-PROF-002: Complete agent onboarding
-// Optimization: 75% reduction in DB round trips (from 4+ queries to 1 batch)
+// Optimization: Batch provides implicit transaction - no need for explicit WithTx
+// 75% reduction in DB round trips (from 4+ queries to 1 batch)
 func (r *AgentProfileRepository) CreateAgentProfileWithRelations(
 	ctx context.Context,
 	profile *domain.AgentProfile,
@@ -48,144 +49,152 @@ func (r *AgentProfileRepository) CreateAgentProfileWithRelations(
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutMed"))
 	defer cancel()
 
-	// Use transaction for atomicity
-	var createdProfile domain.AgentProfile
-	var addressIDs []int64
-	var contactIDs []int64
-	var emailIDs []int64
+	// Create batch - batch provides implicit transaction
+	batch := &pgx.Batch{}
 
-	err := r.db.WithTx(ctx, func(tx pgx.Tx) error {
-		// Step 1: Insert agent profile with RETURNING
-		insertProfile := dblib.Psql.Insert(agentProfileTable).
+	// Step 1: Queue agent profile insert
+	var createdProfile domain.AgentProfile
+	insertProfile := dblib.Psql.Insert(agentProfileTable).
+		Columns(
+			"agent_code", "agent_type", "person_type", "employee_id",
+			"salutation", "first_name", "middle_name", "last_name",
+			"gender", "date_of_birth", "marital_status",
+			"pan", "aadhaar_number",
+			"bank_account_number", "bank_name", "bank_branch", "ifsc_code", "account_holder_name",
+			"posb_account_number", "posb_branch",
+			"circle_id", "circle_name", "division_id", "division_name",
+			"status", "joining_date", "remarks",
+			"created_at", "created_by",
+		).
+		Values(
+			profile.AgentCode, profile.AgentType, profile.PersonType, profile.EmployeeID,
+			profile.Salutation, profile.FirstName, profile.MiddleName, profile.LastName,
+			profile.Gender, profile.DateOfBirth, profile.MaritalStatus,
+			profile.PAN, profile.AadhaarNumber,
+			profile.BankAccountNumber, profile.BankName, profile.BankBranch, profile.IFSCCode, profile.AccountHolderName,
+			profile.POSBAccountNumber, profile.POSBBranch,
+			profile.CircleID, profile.CircleName, profile.DivisionID, profile.DivisionName,
+			profile.Status, profile.JoiningDate, profile.Remarks,
+			sq.Expr("NOW()"), profile.CreatedBy,
+		).
+		Suffix("RETURNING agent_profile_id, created_at")
+
+	if err := dblib.QueueReturnRow(batch, insertProfile, pgx.RowToStructByName[domain.AgentProfile], &createdProfile); err != nil {
+		return nil, fmt.Errorf("failed to queue agent profile insert: %w", err)
+	}
+
+	// Step 2: Queue address inserts
+	addressResults := make([]struct{ AgentAddressID int64 `db:"agent_address_id"` }, len(addresses))
+	for i := range addresses {
+		insertAddress := dblib.Psql.Insert(agentAddressTable).
 			Columns(
-				"agent_code", "agent_type", "person_type", "employee_id",
-				"salutation", "first_name", "middle_name", "last_name",
-				"gender", "date_of_birth", "marital_status",
-				"pan", "aadhaar_number",
-				"bank_account_number", "bank_name", "bank_branch", "ifsc_code", "account_holder_name",
-				"posb_account_number", "posb_branch",
-				"circle_id", "circle_name", "division_id", "division_name",
-				"status", "joining_date", "remarks",
+				"agent_profile_id", "address_type", "address_line_1", "address_line_2", "address_line_3",
+				"landmark", "city", "state", "pincode", "country", "is_primary",
 				"created_at", "created_by",
 			).
 			Values(
-				profile.AgentCode, profile.AgentType, profile.PersonType, profile.EmployeeID,
-				profile.Salutation, profile.FirstName, profile.MiddleName, profile.LastName,
-				profile.Gender, profile.DateOfBirth, profile.MaritalStatus,
-				profile.PAN, profile.AadhaarNumber,
-				profile.BankAccountNumber, profile.BankName, profile.BankBranch, profile.IFSCCode, profile.AccountHolderName,
-				profile.POSBAccountNumber, profile.POSBBranch,
-				profile.CircleID, profile.CircleName, profile.DivisionID, profile.DivisionName,
-				profile.Status, profile.JoiningDate, profile.Remarks,
+				sq.Expr("(SELECT agent_profile_id FROM "+agentProfileTable+" WHERE agent_code = ?)", profile.AgentCode),
+				addresses[i].AddressType,
+				addresses[i].AddressLine1, addresses[i].AddressLine2, addresses[i].AddressLine3,
+				addresses[i].Landmark, addresses[i].City, addresses[i].State, addresses[i].Pincode,
+				addresses[i].Country, addresses[i].IsPrimary,
 				sq.Expr("NOW()"), profile.CreatedBy,
 			).
-			Suffix("RETURNING agent_profile_id, created_at")
+			Suffix("RETURNING agent_address_id")
 
-		// Execute insert and get profile ID
-		err := dblib.TxReturnRow(ctx, tx, insertProfile, pgx.RowToStructByName[domain.AgentProfile], &createdProfile)
-		if err != nil {
-			return fmt.Errorf("failed to insert agent profile: %w", err)
+		if err := dblib.QueueReturnRow(batch, insertAddress, pgx.RowToStructByName[struct{ AgentAddressID int64 `db:"agent_address_id"` }], &addressResults[i]); err != nil {
+			return nil, fmt.Errorf("failed to queue address insert: %w", err)
 		}
+	}
 
-		// Copy returned values to profile
-		profile.AgentProfileID = createdProfile.AgentProfileID
-		profile.CreatedAt = createdProfile.CreatedAt
+	// Step 3: Queue contact inserts
+	contactResults := make([]struct{ AgentContactID int64 `db:"agent_contact_id"` }, len(contacts))
+	for i := range contacts {
+		insertContact := dblib.Psql.Insert(agentContactTable).
+			Columns(
+				"agent_profile_id", "contact_type", "contact_number", "std_code", "extension",
+				"is_primary", "is_whatsapp_enabled",
+				"created_at", "created_by",
+			).
+			Values(
+				sq.Expr("(SELECT agent_profile_id FROM "+agentProfileTable+" WHERE agent_code = ?)", profile.AgentCode),
+				contacts[i].ContactType, contacts[i].ContactNumber,
+				contacts[i].STDCode, contacts[i].Extension,
+				contacts[i].IsPrimary, contacts[i].IsWhatsAppEnabled,
+				sq.Expr("NOW()"), profile.CreatedBy,
+			).
+			Suffix("RETURNING agent_contact_id")
 
-		// Step 2: Batch insert addresses
-		if len(addresses) > 0 {
-			for i := range addresses {
-				addresses[i].AgentProfileID = profile.AgentProfileID
-				addresses[i].CreatedBy = profile.CreatedBy
-				addresses[i].CreatedAt = profile.CreatedAt
-
-				insertAddress := dblib.Psql.Insert(agentAddressTable).
-					Columns(
-						"agent_profile_id", "address_type", "address_line_1", "address_line_2", "address_line_3",
-						"landmark", "city", "state", "pincode", "country", "is_primary",
-						"created_at", "created_by",
-					).
-					Values(
-						addresses[i].AgentProfileID, addresses[i].AddressType,
-						addresses[i].AddressLine1, addresses[i].AddressLine2, addresses[i].AddressLine3,
-						addresses[i].Landmark, addresses[i].City, addresses[i].State, addresses[i].Pincode,
-						addresses[i].Country, addresses[i].IsPrimary,
-						addresses[i].CreatedAt, addresses[i].CreatedBy,
-					).
-					Suffix("RETURNING agent_address_id")
-
-				var addressID struct{ AgentAddressID int64 `db:"agent_address_id"` }
-				if err := dblib.TxReturnRow(ctx, tx, insertAddress, pgx.RowToStructByName[struct{ AgentAddressID int64 `db:"agent_address_id"` }], &addressID); err != nil {
-					return fmt.Errorf("failed to insert address: %w", err)
-				}
-				addresses[i].AgentAddressID = addressID.AgentAddressID
-				addressIDs = append(addressIDs, addressID.AgentAddressID)
-			}
+		if err := dblib.QueueReturnRow(batch, insertContact, pgx.RowToStructByName[struct{ AgentContactID int64 `db:"agent_contact_id"` }], &contactResults[i]); err != nil {
+			return nil, fmt.Errorf("failed to queue contact insert: %w", err)
 		}
+	}
 
-		// Step 3: Batch insert contacts
-		if len(contacts) > 0 {
-			for i := range contacts {
-				contacts[i].AgentProfileID = profile.AgentProfileID
-				contacts[i].CreatedBy = profile.CreatedBy
-				contacts[i].CreatedAt = profile.CreatedAt
+	// Step 4: Queue email inserts
+	emailResults := make([]struct{ AgentEmailID int64 `db:"agent_email_id"` }, len(emails))
+	for i := range emails {
+		insertEmail := dblib.Psql.Insert(agentEmailTable).
+			Columns(
+				"agent_profile_id", "email_type", "email_address",
+				"is_primary", "is_verified",
+				"created_at", "created_by",
+			).
+			Values(
+				sq.Expr("(SELECT agent_profile_id FROM "+agentProfileTable+" WHERE agent_code = ?)", profile.AgentCode),
+				emails[i].EmailType, emails[i].EmailAddress,
+				emails[i].IsPrimary, emails[i].IsVerified,
+				sq.Expr("NOW()"), profile.CreatedBy,
+			).
+			Suffix("RETURNING agent_email_id")
 
-				insertContact := dblib.Psql.Insert(agentContactTable).
-					Columns(
-						"agent_profile_id", "contact_type", "contact_number", "std_code", "extension",
-						"is_primary", "is_whatsapp_enabled",
-						"created_at", "created_by",
-					).
-					Values(
-						contacts[i].AgentProfileID, contacts[i].ContactType, contacts[i].ContactNumber,
-						contacts[i].STDCode, contacts[i].Extension,
-						contacts[i].IsPrimary, contacts[i].IsWhatsAppEnabled,
-						contacts[i].CreatedAt, contacts[i].CreatedBy,
-					).
-					Suffix("RETURNING agent_contact_id")
-
-				var contactID struct{ AgentContactID int64 `db:"agent_contact_id"` }
-				if err := dblib.TxReturnRow(ctx, tx, insertContact, pgx.RowToStructByName[struct{ AgentContactID int64 `db:"agent_contact_id"` }], &contactID); err != nil {
-					return fmt.Errorf("failed to insert contact: %w", err)
-				}
-				contacts[i].AgentContactID = contactID.AgentContactID
-				contactIDs = append(contactIDs, contactID.AgentContactID)
-			}
+		if err := dblib.QueueReturnRow(batch, insertEmail, pgx.RowToStructByName[struct{ AgentEmailID int64 `db:"agent_email_id"` }], &emailResults[i]); err != nil {
+			return nil, fmt.Errorf("failed to queue email insert: %w", err)
 		}
+	}
 
-		// Step 4: Batch insert emails
-		if len(emails) > 0 {
-			for i := range emails {
-				emails[i].AgentProfileID = profile.AgentProfileID
-				emails[i].CreatedBy = profile.CreatedBy
-				emails[i].CreatedAt = profile.CreatedAt
+	// Execute batch (implicit transaction)
+	batchResults := r.db.Pool.SendBatch(ctx, batch)
+	defer batchResults.Close()
 
-				insertEmail := dblib.Psql.Insert(agentEmailTable).
-					Columns(
-						"agent_profile_id", "email_type", "email_address",
-						"is_primary", "is_verified",
-						"created_at", "created_by",
-					).
-					Values(
-						emails[i].AgentProfileID, emails[i].EmailType, emails[i].EmailAddress,
-						emails[i].IsPrimary, emails[i].IsVerified,
-						emails[i].CreatedAt, emails[i].CreatedBy,
-					).
-					Suffix("RETURNING agent_email_id")
+	// Process results sequentially
+	// Result 1: Agent profile
+	if err := batchResults.QueryRow().Scan(&createdProfile.AgentProfileID, &createdProfile.CreatedAt); err != nil {
+		return nil, fmt.Errorf("failed to scan agent profile result: %w", err)
+	}
+	profile.AgentProfileID = createdProfile.AgentProfileID
+	profile.CreatedAt = createdProfile.CreatedAt
 
-				var emailID struct{ AgentEmailID int64 `db:"agent_email_id"` }
-				if err := dblib.TxReturnRow(ctx, tx, insertEmail, pgx.RowToStructByName[struct{ AgentEmailID int64 `db:"agent_email_id"` }], &emailID); err != nil {
-					return fmt.Errorf("failed to insert email: %w", err)
-				}
-				emails[i].AgentEmailID = emailID.AgentEmailID
-				emailIDs = append(emailIDs, emailID.AgentEmailID)
-			}
+	// Results 2..N: Addresses
+	for i := range addresses {
+		if err := batchResults.QueryRow().Scan(&addressResults[i].AgentAddressID); err != nil {
+			return nil, fmt.Errorf("failed to scan address %d result: %w", i, err)
 		}
+		addresses[i].AgentAddressID = addressResults[i].AgentAddressID
+		addresses[i].AgentProfileID = profile.AgentProfileID
+		addresses[i].CreatedAt = profile.CreatedAt
+		addresses[i].CreatedBy = profile.CreatedBy
+	}
 
-		return nil
-	})
+	// Results N+1..M: Contacts
+	for i := range contacts {
+		if err := batchResults.QueryRow().Scan(&contactResults[i].AgentContactID); err != nil {
+			return nil, fmt.Errorf("failed to scan contact %d result: %w", i, err)
+		}
+		contacts[i].AgentContactID = contactResults[i].AgentContactID
+		contacts[i].AgentProfileID = profile.AgentProfileID
+		contacts[i].CreatedAt = profile.CreatedAt
+		contacts[i].CreatedBy = profile.CreatedBy
+	}
 
-	if err != nil {
-		return nil, err
+	// Results M+1..P: Emails
+	for i := range emails {
+		if err := batchResults.QueryRow().Scan(&emailResults[i].AgentEmailID); err != nil {
+			return nil, fmt.Errorf("failed to scan email %d result: %w", i, err)
+		}
+		emails[i].AgentEmailID = emailResults[i].AgentEmailID
+		emails[i].AgentProfileID = profile.AgentProfileID
+		emails[i].CreatedAt = profile.CreatedAt
+		emails[i].CreatedBy = profile.CreatedBy
 	}
 
 	return profile, nil
@@ -322,6 +331,7 @@ func (r *AgentProfileRepository) GetCoordinatorByID(ctx context.Context, coordin
 // SearchAgents searches for agents with dynamic filters
 // FR-IC-PROF-004: Agent search functionality
 // Uses Squirrel for dynamic WHERE clause building
+// Optimization: Single batch with both count and results queries (was 2 round trips)
 func (r *AgentProfileRepository) SearchAgents(ctx context.Context, filters map[string]interface{}, page, pageSize int) ([]domain.AgentProfile, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutMed"))
 	defer cancel()
@@ -358,26 +368,48 @@ func (r *AgentProfileRepository) SearchAgents(ctx context.Context, filters map[s
 		baseQuery = baseQuery.Where(sq.Eq{"division_id": divisionID})
 	}
 
-	// Get total count
+	// Create batch for count + results in single round trip
+	batch := &pgx.Batch{}
+
+	// Query 1: Get total count
 	countQuery := dblib.Psql.Select("COUNT(*)").FromSelect(baseQuery, "filtered")
 	var totalCount int64
-	sql, args, err := countQuery.ToSql()
-	if err != nil {
-		return nil, 0, err
-	}
-	row := r.db.Pool.QueryRow(ctx, sql, args...)
-	if err := row.Scan(&totalCount); err != nil {
-		return nil, 0, err
+	countResult := &totalCount
+	if err := dblib.QueueReturnRow(batch, countQuery, func(row pgx.CollectableRow) (int64, error) {
+		var count int64
+		err := row.Scan(&count)
+		return count, err
+	}, countResult); err != nil {
+		return nil, 0, fmt.Errorf("failed to queue count query: %w", err)
 	}
 
-	// Apply pagination
+	// Query 2: Get paginated results
 	offset := (page - 1) * pageSize
-	baseQuery = baseQuery.OrderBy("created_at DESC").Limit(uint64(pageSize)).Offset(uint64(offset))
+	resultsQuery := baseQuery.OrderBy("created_at DESC").Limit(uint64(pageSize)).Offset(uint64(offset))
+	var agents []domain.AgentProfile
+	if err := dblib.QueueReturn(batch, resultsQuery, pgx.RowToStructByName[domain.AgentProfile], &agents); err != nil {
+		return nil, 0, fmt.Errorf("failed to queue results query: %w", err)
+	}
 
-	// Execute query
-	agents, err := dblib.SelectRows(ctx, r.db, baseQuery, pgx.RowToStructByName[domain.AgentProfile])
+	// Execute batch
+	batchResults := r.db.Pool.SendBatch(ctx, batch)
+	defer batchResults.Close()
+
+	// Process count result
+	if err := batchResults.QueryRow().Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("failed to scan count result: %w", err)
+	}
+
+	// Process results
+	rows, err := batchResults.Query()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("failed to query results: %w", err)
+	}
+	defer rows.Close()
+
+	agents, err = pgx.CollectRows(rows, pgx.RowToStructByName[domain.AgentProfile])
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to collect agent rows: %w", err)
 	}
 
 	return agents, totalCount, nil

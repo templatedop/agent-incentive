@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"agent-commission/core/domain"
@@ -97,6 +98,7 @@ func (r *AgentHierarchyRepository) GetSubordinatesForCoordinator(ctx context.Con
 
 // UpdateHierarchyRelationship updates an existing hierarchy relationship (e.g., coordinator change)
 // Deactivates old relationship and creates new one
+// Optimization: Uses batch instead of transaction (batch provides implicit transaction)
 func (r *AgentHierarchyRepository) UpdateHierarchyRelationship(
 	ctx context.Context,
 	agentID int64,
@@ -108,49 +110,53 @@ func (r *AgentHierarchyRepository) UpdateHierarchyRelationship(
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutMed"))
 	defer cancel()
 
-	return r.db.WithTx(ctx, func(tx pgx.Tx) error {
-		// Step 1: Deactivate old relationship
-		upd := dblib.Psql.Update(agentHierarchyTable).
-			Set("is_active", false).
-			Set("effective_to_date", effectiveFrom).
-			Set("updated_at", sq.Expr("NOW()")).
-			Set("updated_by", updatedBy).
-			Where(sq.And{
-				sq.Eq{"agent_id": agentID},
-				sq.Eq{"is_active": true},
-			})
+	// Create batch - batch provides implicit transaction
+	batch := &pgx.Batch{}
 
-		if err := dblib.TxExec(ctx, tx, upd); err != nil {
-			return err
+	// Step 1: Queue deactivation of old relationship
+	upd := dblib.Psql.Update(agentHierarchyTable).
+		Set("is_active", false).
+		Set("effective_to_date", effectiveFrom).
+		Set("updated_at", sq.Expr("NOW()")).
+		Set("updated_by", updatedBy).
+		Where(sq.And{
+			sq.Eq{"agent_id": agentID},
+			sq.Eq{"is_active": true},
+		})
+
+	if err := dblib.QueueExecRow(batch, upd); err != nil {
+		return err
+	}
+
+	// Step 2: Queue creation of new relationship (using subquery for agent_code)
+	ins := dblib.Psql.Insert(agentHierarchyTable).
+		Columns(
+			"agent_id", "agent_code", "coordinator_id", "coordinator_code",
+			"hierarchy_level", "effective_from_date", "is_active",
+			"created_at", "created_by",
+		).
+		Values(
+			agentID,
+			sq.Expr("(SELECT agent_code FROM "+agentProfileTable+" WHERE agent_profile_id = ?)", agentID),
+			newCoordinatorID, newCoordinatorCode,
+			1, effectiveFrom, true,
+			sq.Expr("NOW()"), updatedBy,
+		)
+
+	if err := dblib.QueueExecRow(batch, ins); err != nil {
+		return err
+	}
+
+	// Execute batch (implicit transaction)
+	batchResults := r.db.Pool.SendBatch(ctx, batch)
+	defer batchResults.Close()
+
+	// Process results
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := batchResults.Exec(); err != nil {
+			return fmt.Errorf("batch operation %d failed: %w", i, err)
 		}
+	}
 
-		// Step 2: Get agent code
-		var agentCode string
-		agentQuery := dblib.Psql.Select("agent_code").
-			From(agentProfileTable).
-			Where(sq.Eq{"agent_profile_id": agentID})
-
-		sql, args, err := agentQuery.ToSql()
-		if err != nil {
-			return err
-		}
-		if err := tx.QueryRow(ctx, sql, args...).Scan(&agentCode); err != nil {
-			return err
-		}
-
-		// Step 3: Create new relationship
-		ins := dblib.Psql.Insert(agentHierarchyTable).
-			Columns(
-				"agent_id", "agent_code", "coordinator_id", "coordinator_code",
-				"hierarchy_level", "effective_from_date", "is_active",
-				"created_at", "created_by",
-			).
-			Values(
-				agentID, agentCode, newCoordinatorID, newCoordinatorCode,
-				1, effectiveFrom, true,
-				sq.Expr("NOW()"), updatedBy,
-			)
-
-		return dblib.TxExec(ctx, tx, ins)
-	})
+	return nil
 }

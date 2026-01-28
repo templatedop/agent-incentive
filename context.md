@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 0 - COMPLETE ✅ | Phase 1 - Ready to Start
-**Current Task**: Phase 0 foundation complete. Ready for Phase 1: Agent Onboarding & Profile Management
+**Phase**: Phase 0 - COMPLETE ✅ | Phase 1 - IN PROGRESS 🔄
+**Current Module**: Phase 1.1 - Agent Onboarding (Tasks 1-5 COMPLETE, Tasks 6-8 PENDING)
 **Last Updated**: 2026-01-28
-**Progress**: 0% (0/105 APIs completed) | Infrastructure: 100%
+**Progress**: 5% (0/105 APIs completed) | Infrastructure: 100% | Module 1.1: 63% (5/8 tasks)
 
 ---
 
@@ -59,16 +59,59 @@
 - ✅ Migration framework ready
 - ✅ Documentation complete
 
-### Phase 1: Agent Onboarding & Profile Management [NOT STARTED]
+### Phase 1: Agent Onboarding & Profile Management [IN PROGRESS]
 **Module 1.1: Agent Onboarding** (6 APIs)
-- [ ] 1.1.1 Read requirements
-- [ ] 1.1.2 Pattern decisions
-- [ ] 1.1.3 Domain models
-- [ ] 1.1.4 DTOs
-- [ ] 1.1.5 Repository
+- [x] 1.1.1 Read requirements
+- [x] 1.1.2 Pattern decisions
+- [x] 1.1.3 Domain models
+- [x] 1.1.4 DTOs
+- [x] 1.1.5 Repository (REFACTORED with batch optimization)
 - [ ] 1.1.6 Temporal workflow
 - [ ] 1.1.7 Handler
 - [ ] 1.1.8 Unit tests
+
+**Deliverables (Module 1.1 - Tasks 1-5):**
+- ✅ **Domain Models** (`agent-commission/core/domain/`)
+  - agent_profile.go (AgentProfile entity with 30+ fields)
+  - agent_address.go (Address management)
+  - agent_contact.go (Contact numbers with WhatsApp support)
+  - agent_email.go (Email with verification)
+  - agent_hierarchy.go (Advisor-Coordinator relationships)
+  - reference_data.go (Circle, Division, ProductPlan)
+  - All with BR/VR/FR traceability comments
+
+- ✅ **Request/Response DTOs** (`agent-commission/handler/`)
+  - request.go - 11 request structures with validation tags
+  - response/agent.go - 15 response structures
+  - Complete coverage for all onboarding workflows
+
+- ✅ **Repository Layer** (`agent-commission/repo/postgres/`)
+  - agent_profile_repository.go (~500 lines)
+    - CreateAgentProfileWithRelations (batch optimized)
+    - GetAgentByID (batch optimized)
+    - SearchAgents (batch optimized - count + results in 1 round trip)
+    - UpdateAgentProfile, UpdateAgentStatus
+    - CheckPANExists, GetCoordinatorByID
+    - GenerateAgentCode
+  - agent_hierarchy_repository.go (~160 lines)
+    - CreateHierarchyRelationship
+    - GetActiveCoordinatorForAgent
+    - GetSubordinatesForCoordinator
+    - UpdateHierarchyRelationship (batch optimized)
+  - reference_data_repository.go (~230 lines)
+    - GetAllCircles, GetCircleByID
+    - GetDivisionsByCircle, GetDivisionByID
+    - GetAllProductPlans, GetActiveProductPlans
+
+- ✅ **Bootstrap Integration**
+  - Updated bootstrap/bootstrapper.go FxRepo module
+  - Registered all 3 repositories with dependency injection
+
+- ✅ **Critical Learning: Batch Optimization**
+  - Refactored all multi-query operations to use pgx.Batch
+  - Eliminated explicit transactions (WithTx) - using batch's implicit transaction
+  - Reduced database round trips by 50-75%
+  - Documented batch patterns in context.md
 
 **Module 1.2: Agent Profile Management** (6 APIs)
 - [ ] Not started
@@ -159,6 +202,60 @@
   - HRMS data
   - Bank details
 - **Target**: Reduce DB round trips by 60-75%
+
+#### Batch Optimization Patterns (Critical Learning from Phase 1)
+
+**Rule #1: NEVER use transactions (WithTx) for multi-query operations - Use batch instead**
+- ❌ **WRONG**: `r.db.WithTx(ctx, func(tx pgx.Tx) { ... })` for multiple queries
+- ✅ **CORRECT**: `batch := &pgx.Batch{}` - Batch provides implicit transaction
+
+**Rule #2: Use batch to reduce database round trips**
+- Search operations: Count + Results = 2 queries → 1 batch
+- Create operations: Profile + Addresses + Contacts = N queries → 1 batch
+- Update operations: Deactivate old + Create new = 2 queries → 1 batch
+
+**Rule #3: Use utility.go batch helper functions**
+Location: `/home/user/agent-incentive/Incentive/api-db/utility.go`
+
+```go
+// For INSERT/UPDATE/DELETE with RETURNING
+dblib.QueueReturnRow(batch, builder, scanFn, result)
+
+// For SELECT returning multiple rows
+dblib.QueueReturn(batch, builder, scanFn, result)
+
+// For INSERT/UPDATE/DELETE without RETURNING
+dblib.QueueExecRow(batch, builder)
+
+// For bulk operations
+dblib.QueueReturnBulk(batch, builder, scanFn, result)
+```
+
+**Rule #4: Batch execution pattern**
+```go
+// 1. Create batch
+batch := &pgx.Batch{}
+
+// 2. Queue operations
+dblib.QueueReturnRow(batch, insertQuery, scanFn, &result1)
+dblib.QueueExecRow(batch, updateQuery)
+dblib.QueueReturn(batch, selectQuery, scanFn, &results)
+
+// 3. Execute batch (implicit transaction)
+batchResults := r.db.Pool.SendBatch(ctx, batch)
+defer batchResults.Close()
+
+// 4. Process results sequentially
+batchResults.QueryRow().Scan(&result1.ID)
+batchResults.Exec()
+rows, _ := batchResults.Query()
+// ... collect rows
+```
+
+**Examples from Phase 1:**
+1. **CreateAgentProfileWithRelations**: Profile + Addresses + Contacts + Emails in ONE batch
+2. **SearchAgents**: Count + Results in ONE batch (was 2 separate queries)
+3. **UpdateHierarchyRelationship**: Deactivate + Create in ONE batch (was transaction)
 
 ### Naming Conventions
 - **Handlers**: `{resource}_handler.go` (e.g., `agent_profile.go`)
