@@ -1,0 +1,2876 @@
+openapi: 3.0.3
+info:
+  title: Incentive, Commission and Producer Management API
+  version: 1.0.0
+  description: |
+    Comprehensive REST API for the Postal Life Insurance (PLI) and Rural Postal Life Insurance (RPLI) Incentive, Commission and Producer Management module.
+
+    **Overview**: This API manages the complete commission lifecycle including agent onboarding, commission calculation, trial statement approval, disbursement processing, license renewal management, commission clawback, and suspense account management.
+
+    **API Summary by Section**:
+    - **Agent Management** (15 APIs): Agent profile CRUD, search, termination, validation
+    - **Commission Processing** (18 APIs): Batch calculation, trial statements, final statements
+    - **Commission Disbursement** (12 APIs): Cheque and EFT payments, SLA monitoring
+    - **License Management** (10 APIs): Renewal tracking, reminders, expiry handling
+    - **Commission History** (8 APIs): Search, inquiry, export functionality
+    - **Clawback Management** (7 APIs): Recovery workflows, accounting integration
+    - **Suspense Accounts** (11 APIs): Dispute management, payment retries, aging
+    - **Commission Rates** (6 APIs): Rate table configuration and management
+    - **Lookup & Reference** (10 APIs): Circles, divisions, coordinators, product plans
+    - **Workflow Management** (8 APIs): Batch status, progress tracking, cancellation
+    - **Integration Webhooks** (4 APIs): PFMS callbacks, accounting confirmations
+    - **Export & Reports** (6 APIs): Excel/PDF generation, scheduled reports
+
+    **Total APIs**: 105 endpoints
+
+    **Key Features**:
+    - Full agent onboarding with HRMS integration
+    - Monthly commission batch processing (6-hour SLA)
+    - Trial statement approval workflow (7-day SLA)
+    - Dual-mode disbursement (Cheque/EFT with PFMS integration)
+    - Automated license renewal reminders (T-30, T-15, T-7, T-0 days)
+    - Commission clawback with graduated recovery
+    - Suspense account management with aging and retry logic
+    - Comprehensive audit trail and compliance tracking
+
+    **SLAs**:
+    - Commission batch calculation: 6 hours
+    - Trial statement approval: 7 days
+    - Disbursement processing: 10 working days
+    - License renewal processing: 3 working days
+
+    **Authentication**: JWT Bearer tokens
+
+    **Rate Limiting**: 1000 requests per hour per user
+
+  contact:
+    name: API Support
+    email: api-support@pli.gov.in
+    url: https://pli.gov.in/support
+  license:
+    name: Proprietary
+    url: https://pli.gov.in/license
+
+servers:
+  - url: https://api.pli.gov.in/v1
+    description: Production server
+  - url: https://api-staging.pli.gov.in/v1
+    description: Staging server
+  - url: https://api-dev.pli.gov.in/v1
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Agents
+    description: Agent profile management operations
+  - name: Commission Processing
+    description: Commission calculation and statement generation
+  - name: Commission Disbursement
+    description: Payment processing via cheque and EFT
+  - name: License Management
+    description: License renewal and expiry tracking
+  - name: Commission History
+    description: Commission history inquiry and search
+  - name: Clawback
+    description: Commission recovery and clawback workflows
+  - name: Suspense Accounts
+    description: Dispute management and suspense account operations
+  - name: Commission Rates
+    description: Rate table configuration and management
+  - name: Lookup & Reference
+    description: Reference data and lookup services
+  - name: Workflow Management
+    description: Batch and workflow status tracking
+  - name: Integration Webhooks
+    description: External system callbacks and webhooks
+  - name: Export & Reports
+    description: Report generation and export functionality
+
+paths:
+ 
+  # ========================================================================
+  # COMMISSION PROCESSING APIs (18 endpoints)
+  # ========================================================================
+  /commissions/batches/start:
+    post:
+      summary: Start commission calculation batch
+      description: |
+        Initiates monthly commission calculation batch for specified month/year.
+        Can be triggered by scheduler or manually.
+        **FR**: FR-IC-COM-002
+        **BR**: BR-IC-COM-001, BR-IC-COM-012 (6-hour timeout)
+        **VR**: VR-IC-COM-001, VR-IC-COM-002
+        **ERR**: IC-ERR-013
+        **INT**: INT-IC-002 (Policy Services)
+        **WF**: WF-IC-COM-001 (Step 1), WF-TEMPORAL-IC-001
+      operationId: startCommissionBatch
+      tags:
+        - Commission Processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartCommissionBatchRequest'
+      responses:
+        '200':
+          description: Batch initiated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CommissionBatchResponse'
+        '400':
+          description: Bad request - batch already running for this month
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "IC-ERR-016"
+                  message: "Commission batch already running for December 2025"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Policy Services unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "IC-INT-002"
+                  message: "Policy Services temporarily unavailable"
+
+  /commissions/batches/{batchId}/status:
+    get:
+      summary: Get commission batch status
+      description: |
+        Retrieves current status and progress of commission batch.
+        **WF**: WF-IC-COM-001, WF-TEMPORAL-IC-001
+      operationId: getCommissionBatchStatus
+      tags:
+        - Commission Processing
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch status retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CommissionBatchStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /commissions/trial-statements:
+    get:
+      summary: List trial statements
+      description: |
+        Retrieves trial statements with filtering and pagination.
+        **FR**: FR-IC-COM-004
+        **BR**: BR-IC-COM-009
+        **WF**: WF-IC-COM-001 (Step 4), WF-IC-TRIAL-001
+      operationId: listTrialStatements
+      tags:
+        - Commission Processing
+      parameters:
+        - name: batch_id
+          in: query
+          schema:
+            type: string
+          description: Filter by batch ID
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+          description: Filter by agent ID
+        - name: circle
+          in: query
+          schema:
+            type: string
+          description: Filter by circle code
+        - name: commission_type
+          in: query
+          schema:
+            type: string
+            enum: [FIRST_YEAR, RENEWAL, BONUS]
+          description: Filter by commission type
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+          description: Filter by status
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Trial statements retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          statements:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/TrialStatementSummary'
+                          pagination:
+                            $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /commissions/trial-statements/{statementId}/approve:
+    post:
+      summary: Approve trial statement
+      description: |
+        Approves trial statement and initiates final statement generation.
+        Supports full or partial disbursement.
+        **FR**: FR-IC-COM-006
+        **BR**: BR-IC-COM-002, BR-IC-COM-005 (partial disbursement)
+        **VR**: VR-IC-COM-003
+        **ERR**: IC-ERR-012
+        **WF**: WF-IC-COM-001 (Step 5), WF-IC-TRIAL-001 (Step 5)
+      operationId: approveTrialStatement
+      tags:
+        - Commission Processing
+      parameters:
+        - $ref: '#/components/parameters/StatementId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveTrialStatementRequest'
+      responses:
+        '200':
+          description: Trial statement approved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TrialStatementApprovalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Approval requires Finance Head authorization (amount > ₹10 Lakhs)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /commissions/final-statements:
+    get:
+      summary: List final statements
+      description: |
+        Retrieves final statements ready for disbursement.
+        **FR**: FR-IC-COM-008
+        **WF**: WF-IC-COM-001 (Step 6)
+      operationId: listFinalStatements
+      tags:
+        - Commission Processing
+      parameters:
+        - name: batch_id
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [READY_FOR_DISBURSEMENT, DISBURSED]
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Final statements retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          statements:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/FinalStatementSummary'
+                          pagination:
+                            $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # COMMISSION DISBURSEMENT APIs (12 endpoints)
+  # ========================================================================
+  /commissions/disbursements:
+    post:
+      summary: Process commission disbursement
+      description: |
+        Initiates disbursement via Cheque or EFT.
+        **FR**: FR-IC-COM-009, FR-IC-COM-010
+        **BR**: BR-IC-COM-008, BR-IC-COM-011 (10-day SLA)
+        **VR**: VR-IC-COM-004
+        **ERR**: IC-ERR-012, IC-ERR-014, IC-ERR-015
+        **INT**: INT-IC-003 (PFMS/Bank), INT-IC-004 (Accounting)
+        **WF**: WF-IC-COM-001 (Step 7), WF-IC-DISB-001, WF-TEMPORAL-IC-003
+      operationId: processDisbursement
+      tags:
+        - Commission Disbursement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessDisbursementRequest'
+      responses:
+        '200':
+          description: Disbursement processed successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DisbursementResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /commissions/disbursements/{disbursementId}/status:
+    get:
+      summary: Get disbursement status
+      description: |
+        Retrieves current status of disbursement including SLA tracking.
+        **WF**: WF-IC-DISB-001, WF-TEMPORAL-IC-003
+      operationId: getDisbursementStatus
+      tags:
+        - Commission Disbursement
+      parameters:
+        - $ref: '#/components/parameters/DisbursementId'
+      responses:
+        '200':
+          description: Disbursement status retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DisbursementStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+ 
+  # ========================================================================
+  # COMMISSION HISTORY APIs (8 endpoints)
+  # ========================================================================
+  /commissions/history:
+    get:
+      summary: Search commission history
+      description: |
+        Retrieves commission transaction history with filtering.
+        **FR**: FR-IC-COM-011
+        **BR**: BR-IC-COM-009
+        **WF**: UJ-IC-007
+      operationId: searchCommissionHistory
+      tags:
+        - Commission History
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: policy_number
+          in: query
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: product_type
+          in: query
+          schema:
+            type: string
+            enum: [PLI, RPLI]
+        - name: commission_type
+          in: query
+          schema:
+            type: string
+            enum: [FIRST_YEAR, RENEWAL, BONUS]
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Commission history retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          transactions:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CommissionTransaction'
+                          pagination:
+                            $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # CLAWBACK APIs (7 endpoints)
+  # ========================================================================
+  /commissions/clawback/create:
+    post:
+      summary: Create commission clawback
+      description: |
+        Initiates clawback process for cancelled policies or fraud.
+        **FR**: FR-IC-COM-011
+        **BR**: BR-IC-CLAWBACK-001 (graduated recovery)
+        **WF**: WF-IC-CLAWBACK-001, WF-TEMPORAL-IC-005
+      operationId: createClawback
+      tags:
+        - Clawback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClawbackRequest'
+      responses:
+        '200':
+          description: Clawback created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ClawbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # SUSPENSE ACCOUNT APIs (11 endpoints)
+  # ========================================================================
+  /commissions/suspense/create:
+    post:
+      summary: Create suspense account entry
+      description: |
+        Creates suspense entry for disputed policies or failed payments.
+        **FR**: FR-IC-COM-013, FR-IC-COM-014
+        **BR**: BR-IC-SUSPENSE-001, BR-IC-SUSPENSE-002 (retry with backoff)
+        **WF**: WF-IC-SUSPENSE-001, WF-TEMPORAL-IC-006
+      operationId: createSuspense
+      tags:
+        - Suspense Accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSuspenseRequest'
+      responses:
+        '200':
+          description: Suspense created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SuspenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /commissions/suspense/aging-report:
+    get:
+      summary: Get suspense aging report
+      description: |
+        Generates report of suspense entries by age buckets.
+        **FR**: FR-IC-COM-018
+        **BR**: BR-IC-SUSPENSE-003
+      operationId: getSuspenseAgingReport
+      tags:
+        - Suspense Accounts
+      parameters:
+        - name: as_of_date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Report as of this date
+        - name: suspense_reason
+          in: query
+          schema:
+            type: string
+            enum: [POLICY_UNDER_INVESTIGATION, PAYMENT_FAILED, DISPUTED_COMMISSION]
+      responses:
+        '200':
+          description: Aging report generated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SuspenseAgingReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # LOOKUP & REFERENCE APIs (10 endpoints)
+  # ========================================================================
+  /lookup/advisor-coordinators:
+    get:
+      summary: Get active advisor coordinators
+      description: |
+        Retrieves list of active advisor coordinators for dropdown.
+        **FR**: FR-IC-PROF-001
+        **BR**: BR-IC-AH-001
+      operationId: getAdvisorCoordinators
+      tags:
+        - Lookup & Reference
+      parameters:
+        - name: circle
+          in: query
+          schema:
+            type: string
+          description: Filter by circle
+        - name: division
+          in: query
+          schema:
+            type: string
+          description: Filter by division
+      responses:
+        '200':
+          description: Coordinators retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          coordinators:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/AdvisorCoordinatorSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /lookup/circles:
+    get:
+      summary: Get all circles
+      description: Retrieves list of circles for reference data
+      operationId: getCircles
+      tags:
+        - Lookup & Reference
+      responses:
+        '200':
+          description: Circles retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          circles:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                circle_code:
+                                  type: string
+                                circle_name:
+                                  type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /lookup/commission-rates:
+    get:
+      summary: Get commission rates
+      description: |
+        Retrieves commission rate table for reference.
+        **FR**: FR-IC-COM-001
+        **BR**: BR-IC-COM-006
+      operationId: getCommissionRates
+      tags:
+        - Commission Rates
+      parameters:
+        - name: product_type
+          in: query
+          schema:
+            type: string
+            enum: [PLI, RPLI]
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+        - name: plan_code
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commission rates retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          rates:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CommissionRate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # INTEGRATION WEBHOOK APIs (4 endpoints)
+  # ========================================================================
+  /webhooks/pfms/disbursement-confirmation:
+    post:
+      summary: PFMS disbursement confirmation callback
+      description: |
+        Receives payment confirmation from PFMS/Bank gateway.
+        **INT**: INT-IC-003
+        **WF**: WF-IC-DISB-001 (Step 8)
+      operationId: pfmsDisbursementConfirmation
+      tags:
+        - Integration Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PFMSDisbursementConfirmation'
+      responses:
+        '200':
+          description: Confirmation acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acknowledged:
+                    type: boolean
+                    example: true
+                  disbursement_status:
+                    type: string
+                    example: "DISBURSED"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid webhook signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhooks/policy/status-change:
+    post:
+      summary: Policy status change notification
+      description: |
+        Receives policy status updates from Policy Services.
+        Triggers commission clawback if policy cancelled.
+        **INT**: INT-IC-002
+      operationId: policyStatusChange
+      tags:
+        - Integration Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyStatusChange'
+      responses:
+        '200':
+          description: Status change processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  processed:
+                    type: boolean
+                    example: true
+                  action_taken:
+                    type: string
+                    example: "CLAWBACK_INITIATED"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ========================================================================
+  # WORKFLOW MANAGEMENT APIs (8 endpoints)
+  # ========================================================================
+  /workflows/{workflowId}/status:
+    get:
+      summary: Get workflow status
+      description: |
+        Retrieves current status and state of a Temporal workflow.
+        **WF**: WF-TEMPORAL-IC-001 to WF-TEMPORAL-IC-006
+      operationId: getWorkflowStatus
+      tags:
+        - Workflow Management
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Temporal workflow ID
+      responses:
+        '200':
+          description: Workflow status retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WorkflowStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workflows/{workflowId}/history:
+    get:
+      summary: Get workflow execution history
+      description: |
+        Retrieves complete execution history of a workflow.
+      operationId: getWorkflowHistory
+      tags:
+        - Workflow Management
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Workflow history retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          workflow_id:
+                            type: string
+                          history:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/WorkflowHistoryEvent'
+                          pagination:
+                            $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workflows/{workflowId}/cancel:
+    post:
+      summary: Cancel workflow execution
+      description: |
+        Cancels a running workflow gracefully.
+      operationId: cancelWorkflow
+      tags:
+        - Workflow Management
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  example: "User requested cancellation"
+                force:
+                  type: boolean
+                  description: Force cancellation even if workflow is in critical section
+                  default: false
+      responses:
+        '200':
+          description: Workflow cancelled successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          workflow_id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [CANCELLED, CANCELLING]
+                          message:
+                            type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workflows/{workflowId}/retry:
+    post:
+      summary: Retry failed workflow
+      description: |
+        Retries a failed workflow from the beginning or from a specific activity.
+      operationId: retryWorkflow
+      tags:
+        - Workflow Management
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retry_from:
+                  type: string
+                  enum: [BEGINNING, LAST_ACTIVITY, SPECIFIC_ACTIVITY]
+                  default: BEGINNING
+                activity_id:
+                  type: string
+                  description: Required if retry_from = SPECIFIC_ACTIVITY
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Workflow retry initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          new_workflow_id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [RUNNING]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workflows/{workflowId}/query:
+    post:
+      summary: Query workflow state
+      description: |
+        Queries the current state of a workflow using Temporal query API.
+        Useful for getting real-time progress without affecting workflow execution.
+      operationId: queryWorkflow
+      tags:
+        - Workflow Management
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query_type
+              properties:
+                query_type:
+                  type: string
+                  enum: [PROGRESS, CURRENT_ACTIVITY, WORKFLOW_STATE]
+                  description: Type of query to execute
+      responses:
+        '200':
+          description: Query result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          query_type:
+                            type: string
+                          result:
+                            type: object
+                            description: Query result based on query_type
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /batches/{batchId}/status:
+    get:
+      summary: Get batch processing status
+      description: |
+        Retrieves status of a commission batch processing job.
+        **WF**: WF-IC-COM-001, WF-TEMPORAL-IC-001
+      operationId: getBatchStatus
+      tags:
+        - Workflow Management
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch status retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CommissionBatchStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /batches/{batchId}/progress:
+    get:
+      summary: Get batch processing progress
+      description: |
+        Retrieves detailed progress information for a running batch.
+      operationId: getBatchProgress
+      tags:
+        - Workflow Management
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch progress retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          batch_id:
+                            type: string
+                          status:
+                            type: string
+                          progress:
+                            $ref: '#/components/schemas/BatchProgress'
+                          sla_tracking:
+                            $ref: '#/components/schemas/SLATracking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /batches/{batchId}/cancel:
+    post:
+      summary: Cancel batch processing
+      description: |
+        Cancels a running or queued batch processing job.
+      operationId: cancelBatch
+      tags:
+        - Workflow Management
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  example: "Data quality issues detected"
+                force:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Batch cancelled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          batch_id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [CANCELLED, COMPLETED]
+                          processed_records:
+                            type: integer
+                          failed_records:
+                            type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cannot cancel - batch already completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========================================================================
+  # EXPORT & REPORTS APIs (6 endpoints)
+  # ========================================================================
+  /exports/commissions/trial-statements:
+    post:
+      summary: Export trial statements
+      description: |
+        Exports trial statements to Excel or PDF format.
+        **FR**: FR-IC-COM-010
+        **BR**: BR-IC-COM-010
+      operationId: exportTrialStatements
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+            examples:
+              excel_export:
+                summary: Export to Excel
+                value:
+                  format: EXCEL
+                  filters:
+                    batch_id: "BATCH_202512_001"
+                    status: "PENDING_APPROVAL"
+                  include_details: true
+              pdf_export:
+                summary: Export to PDF
+                value:
+                  format: PDF
+                  output_type: INDIVIDUAL_PDFS
+                  filters:
+                    agent_id: "AG001"
+      responses:
+        '200':
+          description: Export initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exports/commissions/final-statements:
+    post:
+      summary: Export final statements
+      description: |
+        Exports final statements to Excel or PDF format.
+        **FR**: FR-IC-COM-010
+      operationId: exportFinalStatements
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '200':
+          description: Export initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exports/commissions/history:
+    post:
+      summary: Export commission history
+      description: |
+        Exports commission transaction history to Excel.
+        **FR**: FR-IC-COM-011
+        **BR**: BR-IC-COM-009
+      operationId: exportCommissionHistory
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - format
+                - filters
+              properties:
+                format:
+                  type: string
+                  enum: [EXCEL, CSV, PDF]
+                filters:
+                  type: object
+                  properties:
+                    agent_id:
+                      type: string
+                    date_from:
+                      type: string
+                      format: date
+                    date_to:
+                      type: string
+                      format: date
+                    commission_type:
+                      type: string
+                      enum: [FIRST_YEAR, RENEWAL, BONUS]
+      responses:
+        '200':
+          description: Export initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exports/commissions/clawback:
+    post:
+      summary: Export clawback report
+      description: |
+        Exports commission clawback report to Excel.
+        **FR**: FR-IC-COM-012
+        **BR**: BR-IC-CLAWBACK-001
+      operationId: exportClawbackReport
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - format
+              properties:
+                format:
+                  type: string
+                  enum: [EXCEL, PDF]
+                date_from:
+                  type: string
+                  format: date
+                date_to:
+                  type: string
+                  format: date
+                clawback_reason:
+                  type: string
+                  enum: [POLICY_CANCELLED, POLICY_LAPSED, FRAUD_DETECTED, OTHER]
+      responses:
+        '200':
+          description: Export initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exports/commissions/suspense:
+    post:
+      summary: Export suspense account report
+      description: |
+        Exports suspense account aging report to Excel.
+        **FR**: FR-IC-COM-018
+        **BR**: BR-IC-SUSPENSE-003
+      operationId: exportSuspenseReport
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - format
+              properties:
+                format:
+                  type: string
+                  enum: [EXCEL, PDF]
+                as_of_date:
+                  type: string
+                  format: date
+                suspense_reason:
+                  type: string
+                  enum: [POLICY_UNDER_INVESTIGATION, PAYMENT_FAILED, DISPUTED_COMMISSION]
+                include_age_buckets:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Export initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ExportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /reports/commission-summary:
+    post:
+      summary: Generate commission summary report
+      description: |
+        Generates comprehensive commission summary report with multiple views.
+        Can be scheduled or generated on-demand.
+        **FR**: FR-IC-COM-012
+      operationId: generateCommissionSummary
+      tags:
+        - Export & Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - report_type
+                - period
+              properties:
+                report_type:
+                  type: string
+                  enum: [AGENT_WISE, CIRCLE_DIVISION_WISE, PRODUCT_WISE, COMMISSION_TYPE_WISE]
+                period:
+                  type: object
+                  required:
+                    - from
+                    - to
+                  properties:
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+                include_clawback:
+                  type: boolean
+                  default: false
+                include_suspense:
+                  type: boolean
+                  default: false
+                output_format:
+                  type: string
+                  enum: [EXCEL, PDF]
+                  default: EXCEL
+                schedule:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    frequency:
+                      type: string
+                      enum: [DAILY, WEEKLY, MONTHLY]
+                    recipients:
+                      type: array
+                      items:
+                        type: string
+                        format: email
+      responses:
+        '200':
+          description: Report generated or scheduled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          report_id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [COMPLETED, SCHEDULED, IN_PROGRESS]
+                          download_url:
+                            type: string
+                            format: uri
+                          expires_at:
+                            type: string
+                            format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+# ========================================================================
+# COMPONENTS: SCHEMAS, PARAMETERS, RESPONSES
+# ========================================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authorization
+
+  parameters:
+    AgentCode:
+      name: agentCode
+      in: path
+      required: true
+      description: Unique agent code
+      schema:
+        type: string
+        pattern: '^AGT\\d{10}$'
+        example: "AGT2026001234"
+
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      description: Batch ID
+      schema:
+        type: string
+        example: "BATCH_202512_001"
+
+    StatementId:
+      name: statementId
+      in: path
+      required: true
+      description: Statement ID
+      schema:
+        type: string
+        example: "TRIAL_202512_AG001"
+
+    DisbursementId:
+      name: disbursementId
+      in: path
+      required: true
+      description: Disbursement ID
+      schema:
+        type: string
+        example: "DISB_202512_AG001_001"
+
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Onboarding session ID
+      schema:
+        type: string
+        format: uuid
+        example: "ons_abc123"
+
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Items per page
+
+  responses:
+    BadRequest:
+      description: Bad request - validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "IC-ERR-001"
+              message: "Profile type not selected"
+              details:
+                - field: "agent_type"
+                  message: "This field is required"
+              request_id: "req_abc123"
+              timestamp: "2026-01-27T10:30:00Z"
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "AUTH_001"
+              message: "Unauthorized access"
+              request_id: "req_xyz789"
+              timestamp: "2026-01-27T10:30:00Z"
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "AUTH_002"
+              message: "You don't have permission to perform this action"
+              request_id: "req_def456"
+              timestamp: "2026-01-27T10:30:00Z"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "IC-ERR-004"
+              message: "Agent not found"
+              request_id: "req_ghi789"
+              timestamp: "2026-01-27T10:30:00Z"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "IC-ERR-500"
+              message: "Internal server error"
+              request_id: "req_jkl012"
+              timestamp: "2026-01-27T10:30:00Z"
+
+  schemas:
+    # ======================================================================
+    # COMMON SCHEMAS
+    # ======================================================================
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - timestamp
+        - request_id
+      properties:
+        success:
+          type: boolean
+          example: true
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-01-27T10:30:00Z"
+        request_id:
+          type: string
+          format: uuid
+          example: "req_abc123"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+            - timestamp
+          properties:
+            code:
+              type: string
+              description: |
+                Error codes:
+                - IC-ERR-001: Profile type not selected
+                - IC-ERR-002: PAN already exists
+                - IC-ERR-003: Email format invalid
+                - IC-ERR-004: Agent not found
+                - IC-ERR-009: Coordinator not selected for Advisor
+                - IC-ERR-011: Employee ID not found in HRMS
+                - IC-ERR-012: Disbursement without trial approval
+                - IC-ERR-013: Commission rate not found
+                - IC-ERR-014: Disbursement amount exceeds commission
+                - IC-ERR-015: Bank details missing for EFT
+                - IC-ERR-016: Batch already running
+                - IC-INT-001: HRMS system unavailable
+                - IC-INT-002: Policy Services unavailable
+                - IC-INT-003: PFMS system unavailable
+              example: "IC-ERR-002"
+            message:
+              type: string
+              example: "PAN already exists in system"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+                  rule:
+                    type: string
+                    description: Validation rule ID (e.g., VR-IC-PROF-002)
+            request_id:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+            documentation_url:
+              type: string
+              example: "https://docs.pli.gov.in/errors/IC-ERR-002"
+
+    WorkflowState:
+      type: object
+      description: |
+        Workflow state provides current step, next actions, and allowed operations.
+        Used in all journey APIs for workflow tracking.
+      properties:
+        current_step:
+          type: string
+          example: "validated"
+          description: Current workflow step
+        next_step:
+          type: string
+          example: "save_profile"
+          description: Next workflow step
+        allowed_actions:
+          type: array
+          items:
+            type: string
+          example: ["save", "cancel"]
+          description: Actions user can take at this step
+        progress_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 60
+          description: Progress percentage (for long-running workflows)
+
+    PaginationMetadata:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 2
+        limit:
+          type: integer
+          example: 20
+        total_count:
+          type: integer
+          example: 157
+        total_pages:
+          type: integer
+          example: 8
+        has_next:
+          type: boolean
+          example: true
+        has_previous:
+          type: boolean
+          example: true
+
+    SLATracking:
+      type: object
+      description: |
+        SLA tracking for time-sensitive operations.
+        Used in commission processing and disbursement.
+      properties:
+        deadline:
+          type: string
+          format: date-time
+          example: "2026-01-15T18:00:00Z"
+        remaining_hours:
+          type: integer
+          example: 240
+        status:
+          type: string
+          enum: [GREEN, YELLOW, RED, BREACHED]
+          example: "GREEN"
+        breach_action:
+          type: string
+          example: "Escalate to supervisor"
+
+    # ======================================================================
+    # AGENT MANAGEMENT SCHEMAS
+    # ======================================================================
+    LookupData:
+      type: object
+      properties:
+        agent_types:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+          example:
+            - code: "ADVISOR"
+              name: "Advisor"
+        circles:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+        divisions:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+
+    ValidationRules:
+      type: object
+      properties:
+        pan_format:
+          type: string
+          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$"
+          example: "ABCDE1234F"
+        email_format:
+          type: string
+        phone_format:
+          type: string
+          pattern: "^[6-9]\\d{9}$"
+
+    FormConfiguration:
+      type: object
+      properties:
+        requires_coordinator:
+          type: boolean
+          description: "BR-IC-AH-001: Advisor must be linked to Coordinator"
+        requires_hrms_integration:
+          type: boolean
+          description: "BR-IC-AH-003: Departmental Employee uses HRMS"
+        manual_entry_allowed:
+          type: boolean
+        mandatory_fields:
+          type: array
+          items:
+            type: string
+
+    AgentProfileValidationRequest:
+      type: object
+      required:
+        - session_id
+        - agent_type
+        - profile
+        - address
+        - contact
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        agent_type:
+          type: string
+          enum: [ADVISOR, COORDINATOR, DEPT_EMPLOYEE, FIELD_OFFICER]
+        profile:
+          $ref: '#/components/schemas/AgentProfile'
+        address:
+          $ref: '#/components/schemas/AgentAddress'
+        contact:
+          $ref: '#/components/schemas/AgentContact'
+        bank_account:
+          $ref: '#/components/schemas/BankAccount'
+        license:
+          $ref: '#/components/schemas/License'
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+        error_code:
+          type: string
+          description: |
+            Validation error codes:
+            - IC-ERR-002: PAN not unique (VR-IC-PROF-002)
+            - IC-ERR-003: Email invalid (VR-IC-PROF-006)
+            - IC-ERR-009: No coordinator (BR-IC-AH-001)
+            - IC-ERR-011: Employee not found (VR-IC-PROF-007)
+        message:
+          type: string
+        rule:
+          type: string
+          description: Validation rule ID
+
+    CreateAgentRequest:
+      type: object
+      required:
+        - agent_type
+        - profile
+        - address
+        - contact
+        - license
+      properties:
+        agent_type:
+          type: string
+          enum: [ADVISOR, COORDINATOR, DEPT_EMPLOYEE, FIELD_OFFICER]
+        profile:
+          $ref: '#/components/schemas/AgentProfile'
+        address:
+          $ref: '#/components/schemas/AgentAddress'
+        contact:
+          $ref: '#/components/schemas/AgentContact'
+        bank_account:
+          $ref: '#/components/schemas/BankAccount'
+        license:
+          $ref: '#/components/schemas/License'
+
+    AgentProfile:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - pan
+        - dob
+        - gender
+      properties:
+        first_name:
+          type: string
+          maxLength: 50
+          description: "VR-IC-PROF-003: Mandatory, max 50 chars"
+        middle_name:
+          type: string
+          maxLength: 50
+        last_name:
+          type: string
+          maxLength: 50
+          description: "VR-IC-PROF-003: Mandatory, max 50 chars"
+        pan:
+          type: string
+          pattern: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$"
+          description: "VR-IC-PROF-002: Must be unique"
+        dob:
+          type: string
+          format: date
+          description: "VR-IC-PROF-008: Must be 18+ years"
+        gender:
+          type: string
+          enum: [MALE, FEMALE, OTHER]
+        coordinator_id:
+          type: string
+          description: "BR-IC-AH-001: Required for ADVISOR type"
+
+    AgentAddress:
+      type: object
+      required:
+        - address_line1
+        - city
+        - state
+        - pincode
+      properties:
+        address_line1:
+          type: string
+          description: "VR-IC-PROF-004: Mandatory"
+        address_line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pincode:
+          type: string
+          pattern: "^\\d{6}$"
+        address_type:
+          type: string
+          enum: [RESIDENTIAL, PERMANENT, OFFICE]
+
+    AgentContact:
+      type: object
+      required:
+        - mobile_number
+        - email
+      properties:
+        mobile_number:
+          type: string
+          pattern: "^[6-9]\\d{9}$"
+          description: "VR-IC-PROF-005: Mandatory, must be unique"
+        alternate_number:
+          type: string
+          pattern: "^[6-9]\\d{9}$"
+        email:
+          type: string
+          format: email
+          description: "VR-IC-PROF-006: Mandatory, must be unique"
+
+    BankAccount:
+      type: object
+      properties:
+        account_number:
+          type: string
+          minLength: 9
+          maxLength: 18
+          description: "VR-IC-BANK-001: Mandatory for EFT disbursement"
+        ifsc_code:
+          type: string
+          pattern: "^[A-Z]{4}0[A-Z0-9]{6}$"
+          description: "VR-IC-BANK-002: Valid IFSC format"
+        bank_name:
+          type: string
+        account_type:
+          type: string
+          enum: [SAVINGS, CURRENT, NRE]
+
+    License:
+      type: object
+      required:
+        - license_number
+        - issue_date
+        - renewal_date
+      properties:
+        license_number:
+          type: string
+          description: "VR-IC-LIC-001: Mandatory"
+        issue_date:
+          type: string
+          format: date
+          description: "VR-IC-LIC-002: Must be in past"
+        renewal_date:
+          type: string
+          format: date
+          description: "VR-IC-LIC-003: Must be in future"
+        issuing_authority:
+          type: string
+
+    AgentResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        agent_code:
+          type: string
+          pattern: "^AGT\\d{10}$"
+        agent_type:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, TERMINATED, LICENSE_EXPIRED]
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+
+    AgentDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/AgentResponse'
+        - type: object
+          properties:
+            profile:
+              $ref: '#/components/schemas/AgentProfile'
+            contact:
+              $ref: '#/components/schemas/AgentContact'
+            address:
+              $ref: '#/components/schemas/AgentAddress'
+            bank_account:
+              $ref: '#/components/schemas/BankAccount'
+            license:
+              $ref: '#/components/schemas/License'
+            coordinator:
+              type: object
+              properties:
+                coordinator_id:
+                  type: string
+                coordinator_name:
+                  type: string
+            workflow_state:
+              $ref: '#/components/schemas/WorkflowState'
+
+    TerminateAgentRequest:
+      type: object
+      required:
+        - status_reason
+        - termination_date
+      properties:
+        status_reason:
+          type: string
+          enum: [RESIGNATION, TERMINATION, DEATH, RETIREMENT, OTHER]
+        termination_date:
+          type: string
+          format: date
+        effective_date:
+          type: string
+          format: date
+        remarks:
+          type: string
+
+    AgentSearchRequest:
+      type: object
+      properties:
+        filters:
+          type: object
+          properties:
+            agent_type:
+              type: string
+            status:
+              type: string
+            circle:
+              type: string
+            division:
+              type: string
+            pan:
+              type: string
+        search_text:
+          type: string
+          description: Free text search in name, code
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            sort_by:
+              type: string
+            order:
+              type: string
+              enum: [asc, desc]
+
+    AgentSummary:
+      type: object
+      properties:
+        agent_code:
+          type: string
+        agent_name:
+          type: string
+        agent_type:
+          type: string
+        status:
+          type: string
+        circle:
+          type: string
+        division:
+          type: string
+        mobile_number:
+          type: string
+
+    # ======================================================================
+    # COMMISSION PROCESSING SCHEMAS
+    # ======================================================================
+    StartCommissionBatchRequest:
+      type: object
+      required:
+        - month
+        - year
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          example: 12
+        year:
+          type: integer
+          example: 2025
+        triggered_by:
+          type: string
+          enum: [SYSTEM_SCHEDULER, MANUAL]
+        manual_trigger:
+          type: boolean
+
+    CommissionBatchResponse:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          example: "BATCH_202512_001"
+        status:
+          type: string
+          enum: [INITIATED, CALCULATING, TRIAL_GENERATED, COMPLETED, FAILED]
+        workflow_id:
+          type: string
+          description: Temporal workflow ID
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+        estimated_completion:
+          type: string
+          format: date-time
+        sla_deadline:
+          type: string
+          format: date-time
+          description: "BR-IC-COM-012: 6-hour timeout"
+        created_at:
+          type: string
+          format: date-time
+
+    CommissionBatchStatusResponse:
+      type: object
+      properties:
+        batch_id:
+          type: string
+        status:
+          type: string
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+        sla_tracking:
+          $ref: '#/components/schemas/SLATracking'
+        progress:
+          type: object
+          properties:
+            total_policies:
+              type: integer
+            processed_records:
+              type: integer
+            failed_records:
+              type: integer
+            progress_percentage:
+              type: integer
+        started_at:
+          type: string
+          format: date-time
+        estimated_completion:
+          type: string
+          format: date-time
+
+    TrialStatementSummary:
+      type: object
+      properties:
+        statement_id:
+          type: string
+        agent_code:
+          type: string
+        agent_name:
+          type: string
+        circle:
+          type: string
+        division:
+          type: string
+        gross_commission:
+          type: number
+          format: double
+        tds_amount:
+          type: number
+          format: double
+          description: "BR-IC-COM-003: TDS calculated based on PAN"
+        net_amount:
+          type: number
+          format: double
+        policy_count:
+          type: integer
+        status:
+          type: string
+          enum: [PENDING_APPROVAL, APPROVED, REJECTED, CORRECTION_NEEDED]
+        created_at:
+          type: string
+          format: date-time
+
+    ApproveTrialStatementRequest:
+      type: object
+      required:
+        - approval
+      properties:
+        approval:
+          type: object
+          required:
+            - disbursement_mode
+          properties:
+            disbursement_mode:
+              type: string
+              enum: [FULL, PARTIAL]
+              description: "BR-IC-COM-005: Partial disbursement option"
+            disbursement_percentage:
+              type: number
+              format: double
+              minimum: 1
+              maximum: 100
+              description: Required if disbursement_mode = PARTIAL
+            remarks:
+              type: string
+            approved_by:
+              type: string
+
+    TrialStatementApprovalResponse:
+      type: object
+      properties:
+        statement_id:
+          type: string
+        status:
+          type: string
+          enum: [APPROVED]
+        disbursement_details:
+          type: object
+          properties:
+            mode:
+              type: string
+            gross_amount:
+              type: number
+            disbursement_percentage:
+              type: number
+            approved_amount:
+              type: number
+            tds_on_approved:
+              type: number
+            net_disbursement:
+              type: number
+            pending_amount:
+              type: number
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+        sla_tracking:
+          $ref: '#/components/schemas/SLATracking'
+          description: "BR-IC-COM-011: 10-day disbursement SLA"
+
+    FinalStatementSummary:
+      type: object
+      properties:
+        final_statement_id:
+          type: string
+        trial_statement_id:
+          type: string
+        agent_code:
+          type: string
+        net_payable:
+          type: number
+        status:
+          type: string
+          enum: [READY_FOR_DISBURSEMENT, DISBURSED]
+        generated_at:
+          type: string
+          format: date-time
+
+    # ======================================================================
+    # COMMISSION DISBURSEMENT SCHEMAS
+    # ======================================================================
+    ProcessDisbursementRequest:
+      type: object
+      required:
+        - final_statement_id
+        - disbursement
+      properties:
+        final_statement_id:
+          type: string
+        disbursement:
+          type: object
+          required:
+            - payment_mode
+            - amount
+          properties:
+            payment_mode:
+              type: string
+              enum: [CHEQUE, EFT]
+              description: "BR-IC-COM-008: Disbursement mode workflow"
+            amount:
+              type: number
+              format: double
+            bank_details:
+              $ref: '#/components/schemas/BankAccount'
+            cheque_number:
+              type: string
+              description: Required for CHEQUE mode
+            bank_name:
+              type: string
+              description: Required for CHEQUE mode
+            payment_date:
+              type: string
+              format: date
+              description: Required for CHEQUE mode
+            remarks:
+              type: string
+
+    DisbursementResponse:
+      type: object
+      properties:
+        disbursement_id:
+          type: string
+        final_statement_id:
+          type: string
+        status:
+          type: string
+          enum: [DISBURSED, DISBURSEMENT_QUEUED, PAYMENT_FAILED]
+        payment_mode:
+          type: string
+        amount:
+          type: number
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+        sla_tracking:
+          $ref: '#/components/schemas/SLATracking'
+        created_at:
+          type: string
+          format: date-time
+
+    DisbursementStatusResponse:
+      type: object
+      properties:
+        disbursement_id:
+          type: string
+        status:
+          type: string
+        payment_mode:
+          type: string
+        amount:
+          type: number
+        payment_reference:
+          type: string
+          description: PFMS reference for EFT
+        credited_at:
+          type: string
+          format: date-time
+        retry_count:
+          type: integer
+          description: "BR-IC-SUSPENSE-002: Retry attempts"
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+        sla_tracking:
+          $ref: '#/components/schemas/SLATracking'
+
+    # ======================================================================
+    # LICENSE MANAGEMENT SCHEMAS
+    # ======================================================================
+    LicenseRenewalSummary:
+      type: object
+      properties:
+        license_id:
+          type: string
+        agent_code:
+          type: string
+        agent_name:
+          type: string
+        license_number:
+          type: string
+        renewal_date:
+          type: string
+          format: date
+        days_until_renewal:
+          type: integer
+          description: Used for T-30, T-15, T-7, T-0 reminders
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, PENDING_RENEWAL]
+
+    SubmitLicenseRenewalRequest:
+      type: object
+      required:
+        - renewal_date
+        - documents
+      properties:
+        renewal_date:
+          type: string
+          format: date
+          description: "VR-IC-LIC-003: Must be in future"
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+              document_url:
+                type: string
+        remarks:
+          type: string
+
+    LicenseRenewalResponse:
+      type: object
+      properties:
+        renewal_id:
+          type: string
+        license_id:
+          type: string
+        status:
+          type: string
+          enum: [SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED]
+        submitted_at:
+          type: string
+          format: date-time
+        sla_deadline:
+          type: string
+          format: date-time
+          description: "BR-IC-LIC-005: 3 working days"
+
+    # ======================================================================
+    # COMMISSION HISTORY SCHEMAS
+    # ======================================================================
+    CommissionTransaction:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+        policy_number:
+          type: string
+        agent_code:
+          type: string
+        commission_type:
+          type: string
+          enum: [FIRST_YEAR, RENEWAL, BONUS]
+        product_type:
+          type: string
+          enum: [PLI, RPLI]
+        gross_commission:
+          type: number
+        tds_amount:
+          type: number
+        net_commission:
+          type: number
+        calculation_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [CALCULATED, PAID, CLAWED_BACK, HELD_IN_SUSPENSE]
+
+    # ======================================================================
+    # CLAWBACK SCHEMAS
+    # ======================================================================
+    CreateClawbackRequest:
+      type: object
+      required:
+        - policy_number
+        - clawback_reason
+      properties:
+        policy_number:
+          type: string
+        clawback_reason:
+          type: string
+          enum: [POLICY_CANCELLED, POLICY_LAPSED, FRAUD_DETECTED, OTHER]
+        clawback_amount:
+          type: number
+          description: Optional, system calculates if not provided
+        remarks:
+          type: string
+
+    ClawbackResponse:
+      type: object
+      properties:
+        clawback_id:
+          type: string
+        policy_number:
+          type: string
+        agent_code:
+          type: string
+        clawback_amount:
+          type: number
+        recovery_percentage:
+          type: number
+          description: "BR-IC-CLAWBACK-001: Graduated recovery (100%, 75%, 50%)"
+        recovery_status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
+        created_at:
+          type: string
+          format: date-time
+
+    # ======================================================================
+    # SUSPENSE ACCOUNT SCHEMAS
+    # ======================================================================
+    CreateSuspenseRequest:
+      type: object
+      required:
+        - policy_number
+        - suspense_reason
+        - commission_amount
+      properties:
+        policy_number:
+          type: string
+        suspense_reason:
+          type: string
+          enum: [POLICY_UNDER_INVESTIGATION, PAYMENT_FAILED, DISPUTED_COMMISSION]
+        commission_amount:
+          type: number
+        investigation_reference:
+          type: string
+        expected_resolution_date:
+          type: string
+          format: date
+
+    SuspenseResponse:
+      type: object
+      properties:
+        suspense_id:
+          type: string
+        policy_number:
+          type: string
+        agent_code:
+          type: string
+        commission_amount:
+          type: number
+        suspense_reason:
+          type: string
+        status:
+          type: string
+          enum: [SUSPENDED, RELEASED, FORFEITED]
+        created_at:
+          type: string
+          format: date-time
+        expected_resolution_date:
+          type: string
+          format: date
+
+    SuspenseAgingReport:
+      type: object
+      properties:
+        as_of_date:
+          type: string
+          format: date
+        summary:
+          type: object
+          properties:
+            total_suspense_count:
+              type: integer
+            total_suspense_amount:
+              type: number
+        age_buckets:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+                enum: ["0-30 days", "31-60 days", "61-90 days", "90+ days"]
+              count:
+                type: integer
+              amount:
+                type: number
+        by_reason:
+          type: array
+          items:
+            type: object
+            properties:
+              reason:
+                type: string
+              count:
+                type: integer
+              amount:
+                type: number
+
+    # ======================================================================
+    # LOOKUP & REFERENCE SCHEMAS
+    # ======================================================================
+    AdvisorCoordinatorSummary:
+      type: object
+      properties:
+        coordinator_id:
+          type: string
+        agent_code:
+          type: string
+        name:
+          type: string
+        circle:
+          type: string
+        circle_name:
+          type: string
+        division:
+          type: string
+        division_name:
+          type: string
+        status:
+          type: string
+        can_supervise:
+          type: boolean
+
+    CommissionRate:
+      type: object
+      description: "BR-IC-COM-006: Commission rate table structure"
+      properties:
+        rate_id:
+          type: string
+        rate_percentage:
+          type: number
+          format: double
+        policy_duration_months:
+          type: integer
+        product_type:
+          type: string
+          enum: [PLI, RPLI]
+        plan_code:
+          type: string
+        agent_type:
+          type: string
+        policy_term_years:
+          type: integer
+        effective_from:
+          type: string
+          format: date
+        effective_to:
+          type: string
+          format: date
+
+    # ======================================================================
+    # INTEGRATION WEBHOOK SCHEMAS
+    # ======================================================================
+    PFMSDisbursementConfirmation:
+      type: object
+      required:
+        - disbursement_id
+        - status
+      properties:
+        disbursement_id:
+          type: string
+        payment_reference:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+        amount:
+          type: number
+          format: double
+        credited_at:
+          type: string
+          format: date-time
+        failure_reason:
+          type: string
+        signature:
+          type: string
+          description: Webhook signature for verification
+
+    PolicyStatusChange:
+      type: object
+      required:
+        - policy_number
+        - old_status
+        - new_status
+      properties:
+        policy_number:
+          type: string
+        old_status:
+          type: string
+        new_status:
+          type: string
+          enum: [ACTIVE, CANCELLED, LAPSED, SURRENDERED]
+        reason:
+          type: string
+        effective_date:
+          type: string
+          format: date
+        agent_code:
+          type: string
+        commission_paid:
+          type: number
+          format: double
+          description: Total commission paid for this policy
+
+    # ======================================================================
+    # WORKFLOW MANAGEMENT SCHEMAS
+    # ======================================================================
+    WorkflowStatusResponse:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+        workflow_type:
+          type: string
+          enum:
+            - MonthlyCommissionProcessing
+            - LicenseRenewalReminder
+            - CommissionDisbursementSLAMonitoring
+            - AgentOnboardingOrchestration
+            - CommissionClawback
+            - SuspenseManagement
+        status:
+          type: string
+          enum: [RUNNING, COMPLETED, FAILED, CANCELLED, TIMED_OUT]
+        current_step:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        workflow_state:
+          $ref: '#/components/schemas/WorkflowState'
+
+    WorkflowHistoryEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+          enum: [WORKFLOW_STARTED, ACTIVITY_COMPLETED, ACTIVITY_FAILED, WORKFLOW_COMPLETED, WORKFLOW_FAILED]
+        timestamp:
+          type: string
+          format: date-time
+        activity_name:
+          type: string
+        details:
+          type: object
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    BatchProgress:
+      type: object
+      properties:
+        total_records:
+          type: integer
+        processed_records:
+          type: integer
+        failed_records:
+          type: integer
+        progress_percentage:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        started_at:
+          type: string
+          format: date-time
+        estimated_completion:
+          type: string
+          format: date-time
+        current_activity:
+          type: string
+        activities:
+          type: array
+          items:
+            type: object
+            properties:
+              activity_name:
+                type: string
+              status:
+                type: string
+                enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
+              started_at:
+                type: string
+                format: date-time
+              completed_at:
+                type: string
+                format: date-time
+
+    # ======================================================================
+    # EXPORT & REPORTS SCHEMAS
+    # ======================================================================
+    ExportRequest:
+      type: object
+      required:
+        - format
+      properties:
+        format:
+          type: string
+          enum: [EXCEL, PDF, CSV]
+        output_type:
+          type: string
+          enum: [CONSOLIDATED, INDIVIDUAL_PDFS]
+          description: For PDF exports, generate individual PDFs per agent
+        filters:
+          type: object
+          description: Filter criteria for export
+        include_details:
+          type: boolean
+          default: true
+        date_range:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date
+            to:
+              type: string
+              format: date
+
+    ExportResponse:
+      type: object
+      properties:
+        export_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [QUEUED, IN_PROGRESS, COMPLETED, FAILED]
+        format:
+          type: string
+          enum: [EXCEL, PDF, CSV]
+        download_url:
+          type: string
+          format: uri
+          description: URL to download exported file (available when status = COMPLETED)
+        expires_at:
+          type: string
+          format: date-time
+          description: Download link expiration time
+        file_size_bytes:
+          type: integer
+          description: File size (available when export completes)
+        records_count:
+          type: integer
+          description: Number of records in export
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
