@@ -170,7 +170,7 @@ func (r *FinalStatementRepository) SearchFinalStatements(
 	var statements []domain.FinalStatement
 
 	// Queue count query
-	scanCountFn := func(row pgx.Row) (int64, error) {
+	scanCountFn := func(row pgx.CollectableRow) (int64, error) {
 		var count int64
 		err := row.Scan(&count)
 		return count, err
@@ -208,7 +208,8 @@ func (r *FinalStatementRepository) UpdateStatementStatus(
 			sq.Eq{"deleted_at": nil},
 		})
 
-	return dblib.Update(ctx, r.db, q)
+	_, err := dblib.Update(ctx, r.db, q)
+	return err
 }
 
 // GenerateFinalStatementNumber generates a unique statement number

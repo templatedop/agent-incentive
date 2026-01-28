@@ -74,7 +74,8 @@ func (r *CommissionBatchRepository) CreateBatch(
 		batch.SLADeadline,
 	)
 
-	return dblib.Insert(ctx, r.db, q)
+	_, err := dblib.Insert(ctx, r.db, q)
+	return err
 }
 
 // GetBatchByID retrieves a commission batch by batch ID
@@ -171,7 +172,8 @@ func (r *CommissionBatchRepository) UpdateBatchProgress(
 		Set("updated_at", time.Now()).
 		Where(sq.Eq{"batch_id": batchID})
 
-	return dblib.Update(ctx, r.db, q)
+	_, err := dblib.Update(ctx, r.db, q)
+	return err
 }
 
 // UpdateBatchStatus updates the batch status
@@ -190,7 +192,8 @@ func (r *CommissionBatchRepository) UpdateBatchStatus(
 		Set("updated_at", time.Now()).
 		Where(sq.Eq{"batch_id": batchID})
 
-	return dblib.Update(ctx, r.db, q)
+	_, err := dblib.Update(ctx, r.db, q)
+	return err
 }
 
 // CompleteBatch marks the batch as completed
@@ -216,7 +219,8 @@ func (r *CommissionBatchRepository) CompleteBatch(
 
 	q = q.Where(sq.Eq{"batch_id": batchID})
 
-	return dblib.Update(ctx, r.db, q)
+	_, err := dblib.Update(ctx, r.db, q)
+	return err
 }
 
 // GenerateBatchID generates a unique batch ID for a given month/year
