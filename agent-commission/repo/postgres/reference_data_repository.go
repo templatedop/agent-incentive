@@ -44,7 +44,7 @@ func (r *ReferenceDataRepository) GetAllCircles(ctx context.Context) ([]domain.C
 
 // GetCircleByID retrieves a circle by ID
 // BR-IC-AH-002: Validate circle during coordinator assignment
-func (r *ReferenceDataRepository) GetCircleByID(ctx context.Context, circleID int64) (*domain.Circle, error) {
+func (r *ReferenceDataRepository) GetCircleByID(ctx context.Context, circleID int64) (domain.Circle, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -77,7 +77,7 @@ func (r *ReferenceDataRepository) GetDivisionsByCircle(ctx context.Context, circ
 
 // GetDivisionByID retrieves a division by ID
 // BR-IC-AH-002: Validate division during coordinator assignment
-func (r *ReferenceDataRepository) GetDivisionByID(ctx context.Context, divisionID int64) (*domain.Division, error) {
+func (r *ReferenceDataRepository) GetDivisionByID(ctx context.Context, divisionID int64) (domain.Division, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -126,7 +126,7 @@ func (r *ReferenceDataRepository) GetProductPlans(ctx context.Context, productTy
 }
 
 // GetProductPlanByCode retrieves a product plan by code
-func (r *ReferenceDataRepository) GetProductPlanByCode(ctx context.Context, planCode string) (*domain.ProductPlan, error) {
+func (r *ReferenceDataRepository) GetProductPlanByCode(ctx context.Context, planCode string) (domain.ProductPlan, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 

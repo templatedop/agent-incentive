@@ -81,7 +81,7 @@ func (r *CommissionBatchRepository) CreateBatch(
 func (r *CommissionBatchRepository) GetBatchByID(
 	ctx context.Context,
 	batchID string,
-) (*domain.CommissionBatch, error) {
+) (domain.CommissionBatch, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 
@@ -114,7 +114,7 @@ func (r *CommissionBatchRepository) GetBatchByID(
 func (r *CommissionBatchRepository) GetBatchByMonthYear(
 	ctx context.Context,
 	month, year int,
-) (*domain.CommissionBatch, error) {
+) (domain.CommissionBatch, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.cfg.GetDuration("db.QueryTimeoutLow"))
 	defer cancel()
 

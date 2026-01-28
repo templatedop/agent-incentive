@@ -75,8 +75,8 @@ func (h *CommissionBatchHandler) StartCommissionBatch(
 		return nil, err
 	}
 
-	// If batch exists and is not completed/failed, return error
-	if existingBatch != nil {
+	// If batch exists (no error means batch found) and is not completed/failed, return error
+	if err == nil {
 		if existingBatch.Status != domain.BatchStatusCompleted && existingBatch.Status != domain.BatchStatusFailed {
 			log.Warn(sctx.Ctx, "Batch already running for %d-%d: %s", req.Year, req.Month, existingBatch.BatchID)
 			return nil, errors.New("commission batch already running for this month")
@@ -173,7 +173,7 @@ func (h *CommissionBatchHandler) GetCommissionBatchStatus(
 	// Build response
 	response := &resp.GetCommissionBatchStatusResponse{
 		StatusCodeAndMessage: port.FetchSuccess,
-		Data:                 resp.NewCommissionBatchStatusResponse(*batch),
+		Data:                 resp.NewCommissionBatchStatusResponse(batch),
 	}
 
 	return response, nil
