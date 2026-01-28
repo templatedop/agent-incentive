@@ -178,8 +178,3 @@ func (h *SuspenseHandler) GetAgingReport(
 
 	return resp, nil
 }
-
-// ptrString returns a pointer to the given string
-func ptrString(s string) *string {
-	return &s
-}
