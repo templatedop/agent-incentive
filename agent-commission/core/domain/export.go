@@ -59,6 +59,9 @@ type ExportJob struct {
 	// Error handling
 	ErrorMessage *string `db:"error_message"`
 	RetryCount   int     `db:"retry_count"`
+	// Workflow tracking
+	WorkflowID    *string `db:"workflow_id"`    // Temporal workflow ID for export job
+	WorkflowState *string `db:"workflow_state"` // Workflow state (INITIATED, RUNNING, etc.)
 	// Metadata
 	CreatedAt time.Time  `db:"created_at"`
 	UpdatedAt time.Time  `db:"updated_at"`

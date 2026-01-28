@@ -135,9 +135,21 @@ func (h *ExportHandler) ExportTrialStatements(
 
 	log.Info(sctx.Ctx, "Export job created: %d", job.ExportID)
 
-	// TODO: Start background export workflow
-	// workflowID := fmt.Sprintf("export-trial-statements-%d", job.ExportID)
-	// h.temporalClient.ExecuteWorkflow(ctx, options, "ExportTrialStatementsWorkflow", req)
+	// Start Temporal workflow for background export processing
+	// Workflow will handle file generation, storage upload, and status updates
+	workflowID := fmt.Sprintf("export-trial-statements-%d", job.ExportID)
+	job.WorkflowID = &workflowID
+	job.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err := h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "export-processing-queue",
+	// }, "ExportTrialStatementsWorkflow", job, req)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting export workflow: %v", err)
+	//     return nil, errors.New("failed to initiate export workflow")
+	// }
 
 	resp := response.NewExportJobResponse(job)
 	return resp, nil
@@ -164,9 +176,21 @@ func (h *ExportHandler) ExportFinalStatements(
 
 	log.Info(sctx.Ctx, "Export job created: %d", job.ExportID)
 
-	// TODO: Start background export workflow
-	// workflowID := fmt.Sprintf("export-final-statements-%d", job.ExportID)
-	// h.temporalClient.ExecuteWorkflow(ctx, options, "ExportFinalStatementsWorkflow", req)
+	// Start Temporal workflow for background export processing
+	// Workflow will handle file generation, storage upload, and status updates
+	workflowID := fmt.Sprintf("export-final-statements-%d", job.ExportID)
+	job.WorkflowID = &workflowID
+	job.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err := h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "export-processing-queue",
+	// }, "ExportFinalStatementsWorkflow", job, req)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting export workflow: %v", err)
+	//     return nil, errors.New("failed to initiate export workflow")
+	// }
 
 	resp := response.NewExportJobResponse(job)
 	return resp, nil
@@ -193,9 +217,21 @@ func (h *ExportHandler) ExportCommissionHistory(
 
 	log.Info(sctx.Ctx, "Export job created: %d", job.ExportID)
 
-	// TODO: Start background export workflow
-	// workflowID := fmt.Sprintf("export-commission-history-%d", job.ExportID)
-	// h.temporalClient.ExecuteWorkflow(ctx, options, "ExportCommissionHistoryWorkflow", req)
+	// Start Temporal workflow for background export processing
+	// Workflow will handle file generation, storage upload, and status updates
+	workflowID := fmt.Sprintf("export-commission-history-%d", job.ExportID)
+	job.WorkflowID = &workflowID
+	job.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err := h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "export-processing-queue",
+	// }, "ExportCommissionHistoryWorkflow", job, req)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting export workflow: %v", err)
+	//     return nil, errors.New("failed to initiate export workflow")
+	// }
 
 	resp := response.NewExportJobResponse(job)
 	return resp, nil
@@ -222,9 +258,21 @@ func (h *ExportHandler) ExportClawbackReport(
 
 	log.Info(sctx.Ctx, "Export job created: %d", job.ExportID)
 
-	// TODO: Start background export workflow
-	// workflowID := fmt.Sprintf("export-clawback-%d", job.ExportID)
-	// h.temporalClient.ExecuteWorkflow(ctx, options, "ExportClawbackReportWorkflow", req)
+	// Start Temporal workflow for background export processing
+	// Workflow will handle file generation, storage upload, and status updates
+	workflowID := fmt.Sprintf("export-clawback-%d", job.ExportID)
+	job.WorkflowID = &workflowID
+	job.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err := h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "export-processing-queue",
+	// }, "ExportClawbackReportWorkflow", job, req)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting export workflow: %v", err)
+	//     return nil, errors.New("failed to initiate export workflow")
+	// }
 
 	resp := response.NewExportJobResponse(job)
 	return resp, nil
@@ -251,9 +299,21 @@ func (h *ExportHandler) ExportSuspenseReport(
 
 	log.Info(sctx.Ctx, "Export job created: %d", job.ExportID)
 
-	// TODO: Start background export workflow
-	// workflowID := fmt.Sprintf("export-suspense-%d", job.ExportID)
-	// h.temporalClient.ExecuteWorkflow(ctx, options, "ExportSuspenseReportWorkflow", req)
+	// Start Temporal workflow for background export processing
+	// Workflow will handle file generation, storage upload, and status updates
+	workflowID := fmt.Sprintf("export-suspense-%d", job.ExportID)
+	job.WorkflowID = &workflowID
+	job.WorkflowState = ptrString("INITIATED")
+
+	// TODO: Uncomment when Temporal client is available
+	// err := h.temporalClient.ExecuteWorkflow(sctx.Ctx, client.StartWorkflowOptions{
+	//     ID:        workflowID,
+	//     TaskQueue: "export-processing-queue",
+	// }, "ExportSuspenseReportWorkflow", job, req)
+	// if err != nil {
+	//     log.Error(sctx.Ctx, "Error starting export workflow: %v", err)
+	//     return nil, errors.New("failed to initiate export workflow")
+	// }
 
 	resp := response.NewExportJobResponse(job)
 	return resp, nil
@@ -321,4 +381,9 @@ func (h *ExportHandler) GenerateCommissionSummary(
 
 	resp := response.NewCommissionSummaryResponse(report)
 	return resp, nil
+}
+
+// Helper function to create string pointer
+func ptrString(s string) *string {
+	return &s
 }

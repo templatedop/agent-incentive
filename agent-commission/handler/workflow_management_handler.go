@@ -54,10 +54,7 @@ type WorkflowIDUri struct {
 	WorkflowID string `uri:"workflowId" validate:"required"`
 }
 
-// BatchIDUri represents the URI parameter for batch ID
-type BatchIDUri struct {
-	BatchID string `uri:"batchId" validate:"required"`
-}
+// Note: BatchIDUri is defined in commission_batch_handler.go
 
 // QueryWorkflowRequest represents request to query workflow state
 type QueryWorkflowRequest struct {
