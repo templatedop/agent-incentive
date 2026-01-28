@@ -20,9 +20,12 @@ var FxRepo = fx.Module(
 		postgres.NewTrialStatementRepository,
 		postgres.NewFinalStatementRepository,
 
+		// Phase 3: Disbursement repositories
+		postgres.NewDisbursementRepository,
+
 		// Future phases
-		// postgres.NewDisbursementRepository,
-		// postgres.NewClawbackRepository,
+		// Phase 5: postgres.NewClawbackRepository,
+		// Phase 6: postgres.NewSuspenseRepository,
 		// etc.
 	),
 )
@@ -40,9 +43,14 @@ var FxHandler = fx.Module(
 		handler.NewTrialStatementHandler,
 		handler.NewFinalStatementHandler,
 
+		// Phase 3: Disbursement & Webhooks (4 APIs)
+		handler.NewDisbursementHandler,
+		handler.NewWebhookHandler,
+
 		// Future phases
-		// Phase 3: Disbursement
-		// Phase 4: Clawback
+		// Phase 4: Commission History
+		// Phase 5: Clawback
+		// Phase 6: Suspense
 		// etc.
 	),
 )
