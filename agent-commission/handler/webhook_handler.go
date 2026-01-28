@@ -8,6 +8,7 @@ import (
 	repo "agent-commission/repo/postgres"
 
 	log "gitlab.cept.gov.in/it-2.0-common/api-log"
+	serverHandler "gitlab.cept.gov.in/it-2.0-common/n-api-server/handler"
 	serverRoute "gitlab.cept.gov.in/it-2.0-common/n-api-server/route"
 )
 
@@ -15,6 +16,7 @@ import (
 // INT-IC-002: Policy Services webhook
 // INT-IC-003: PFMS webhook
 type WebhookHandler struct {
+	*serverHandler.Base
 	disbursementRepo *repo.DisbursementRepository
 	// TODO: Add CommissionBatchRepository for policy status changes
 }
@@ -23,15 +25,19 @@ type WebhookHandler struct {
 func NewWebhookHandler(
 	disbursementRepo *repo.DisbursementRepository,
 ) *WebhookHandler {
+	base := serverHandler.New("Webhooks").SetPrefix("/v1").AddPrefix("")
 	return &WebhookHandler{
+		Base:             base,
 		disbursementRepo: disbursementRepo,
 	}
 }
 
-// SetupRoutes registers webhook routes
-func (h *WebhookHandler) SetupRoutes(router *serverRoute.Router) {
-	router.POST("/webhooks/pfms/disbursement-confirmation", h.PFMSDisbursementConfirmation)
-	router.POST("/webhooks/policy/status-change", h.PolicyStatusChange)
+// Routes returns all routes for webhook endpoints
+func (h *WebhookHandler) Routes() []serverRoute.Route {
+	return []serverRoute.Route{
+		serverRoute.POST("/webhooks/pfms/disbursement-confirmation", h.PFMSDisbursementConfirmation).Name("PFMS Disbursement Confirmation"),
+		serverRoute.POST("/webhooks/policy/status-change", h.PolicyStatusChange).Name("Policy Status Change"),
+	}
 }
 
 // PFMSDisbursementConfirmationRequest represents PFMS payment confirmation webhook

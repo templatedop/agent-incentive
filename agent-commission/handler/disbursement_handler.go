@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	log "gitlab.cept.gov.in/it-2.0-common/api-log"
+	serverHandler "gitlab.cept.gov.in/it-2.0-common/n-api-server/handler"
 	serverRoute "gitlab.cept.gov.in/it-2.0-common/n-api-server/route"
 )
 
@@ -18,6 +19,7 @@ import (
 // FR-IC-COM-009: Cheque disbursement
 // FR-IC-COM-010: EFT disbursement via PFMS
 type DisbursementHandler struct {
+	*serverHandler.Base
 	disbursementRepo *repo.DisbursementRepository
 	finalStmtRepo    *repo.FinalStatementRepository
 }
@@ -27,16 +29,20 @@ func NewDisbursementHandler(
 	disbursementRepo *repo.DisbursementRepository,
 	finalStmtRepo *repo.FinalStatementRepository,
 ) *DisbursementHandler {
+	base := serverHandler.New("Disbursements").SetPrefix("/v1").AddPrefix("")
 	return &DisbursementHandler{
+		Base:             base,
 		disbursementRepo: disbursementRepo,
 		finalStmtRepo:    finalStmtRepo,
 	}
 }
 
-// SetupRoutes registers handler routes
-func (h *DisbursementHandler) SetupRoutes(router *serverRoute.Router) {
-	router.POST("/commissions/disbursements", h.CreateDisbursement)
-	router.GET("/commissions/disbursements/:disbursementId/status", h.GetDisbursementStatus)
+// Routes returns all routes for disbursement endpoints
+func (h *DisbursementHandler) Routes() []serverRoute.Route {
+	return []serverRoute.Route{
+		serverRoute.POST("/commissions/disbursements", h.CreateDisbursement).Name("Create Disbursement"),
+		serverRoute.GET("/commissions/disbursements/:disbursementId/status", h.GetDisbursementStatus).Name("Get Disbursement Status"),
+	}
 }
 
 // CreateDisbursementRequest represents request to create a disbursement
