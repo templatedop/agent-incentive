@@ -12,13 +12,18 @@ import (
 var FxRepo = fx.Module(
 	"Repomodule",
 	fx.Provide(
-		// Reference data repositories (read-only, for lookups)
+		// Phase 1: Reference data repositories
 		postgres.NewReferenceDataRepository,
-
-		// Commission module repositories
 		postgres.NewCommissionRateRepository,
-		// postgres.NewCommissionBatchRepository,
+
+		// Phase 2: Commission processing repositories
+		postgres.NewCommissionBatchRepository,
+		postgres.NewTrialStatementRepository,
+		postgres.NewFinalStatementRepository,
+
+		// Future phases
 		// postgres.NewDisbursementRepository,
+		// postgres.NewClawbackRepository,
 		// etc.
 	),
 )
@@ -27,19 +32,38 @@ var FxRepo = fx.Module(
 var FxHandler = fx.Module(
 	"Handlermodule",
 	fx.Provide(
-		// Phase 1: Commission Rate Configuration & Lookup
+		// Phase 1: Commission Rate Configuration & Lookup (3 APIs)
 		handler.NewCommissionRateHandler,
 		handler.NewLookupHandler,
-		// Phase 2: Commission Batch Processing
+
+		// Phase 2: Commission Processing (5 APIs)
+		handler.NewCommissionBatchHandler,
+		handler.NewTrialStatementHandler,
+		handler.NewFinalStatementHandler,
+
+		// Future phases
 		// Phase 3: Disbursement
+		// Phase 4: Clawback
 		// etc.
 	),
 	fx.Invoke(func(
+		// Phase 1 handlers
 		commissionRateHandler *handler.CommissionRateHandler,
 		lookupHandler *handler.LookupHandler,
+
+		// Phase 2 handlers
+		commissionBatchHandler *handler.CommissionBatchHandler,
+		trialStatementHandler *handler.TrialStatementHandler,
+		finalStatementHandler *handler.FinalStatementHandler,
 	) {
+		// Register Phase 1 handlers
 		serverHandler.Register(commissionRateHandler)
 		serverHandler.Register(lookupHandler)
+
+		// Register Phase 2 handlers
+		serverHandler.Register(commissionBatchHandler)
+		serverHandler.Register(trialStatementHandler)
+		serverHandler.Register(finalStatementHandler)
 	}),
 )
 
