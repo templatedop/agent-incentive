@@ -1,0 +1,134 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-commission-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agent_commission_dev
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-commission-network
+
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: agent-commission-temporal
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=postgres
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"  # Temporal server port
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agent-commission-network
+    healthcheck:
+      test: ["CMD", "tctl", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Temporal Web UI
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: agent-commission-temporal-ui
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"  # Temporal UI port
+    depends_on:
+      temporal:
+        condition: service_healthy
+    networks:
+      - agent-commission-network
+
+  # Redis (for caching - optional)
+  redis:
+    image: redis:7-alpine
+    container_name: agent-commission-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-commission-network
+
+  # PgAdmin (PostgreSQL Management UI - optional, for development)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: agent-commission-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@agent-commission.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - agent-commission-network
+    profiles:
+      - dev-tools  # Only start with: docker-compose --profile dev-tools up
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  agent-commission-network:
+    driver: bridge
+
+# Usage:
+# 
+# Start all services:
+#   docker-compose up -d
+#
+# Start with PgAdmin (dev tools):
+#   docker-compose --profile dev-tools up -d
+#
+# View logs:
+#   docker-compose logs -f [service_name]
+#
+# Stop all services:
+#   docker-compose down
+#
+# Stop and remove volumes (DANGER: Deletes all data):
+#   docker-compose down -v
+#
+# Access URLs:
+#   - PostgreSQL: localhost:5432
+#   - Temporal UI: http://localhost:8080
+#   - PgAdmin: http://localhost:5050 (with dev-tools profile)
+#   - Redis: localhost:6379
+#   - Application: http://localhost:8081 (when running)

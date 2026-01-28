@@ -1,0 +1,75 @@
+# Production Environment Configuration
+# Security-hardened settings for production deployment
+
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+server:
+  addr: ":8080"
+  readtimeout: 15s
+  writetimeout: 120s
+  timeout: 60
+  debug:
+    stats:
+      expose: false  # Disabled in production
+    pprof:
+      expose: false  # Disabled in production
+  dashboard:
+    Enabled: false  # Disabled in production
+
+db:
+  # Production DB credentials should be provided via environment variables
+  username: ${DB_USERNAME}
+  password: ${DB_PASSWORD}
+  host: ${DB_HOST}
+  port: ${DB_PORT}
+  database: agent_commission_prod
+  schema: public
+  maxconns: 50
+  minconns: 10
+  maxconnlifetime: 30
+  maxconnidletime: 10
+  healthcheckperiod: 10
+
+temporal:
+  host: ${TEMPORAL_HOST}
+  port: ${TEMPORAL_PORT}
+  namespace: "production"
+
+cache:
+  isredisenabled: true
+  islocalcacheenabled: false
+  redisserver: ${REDIS_HOST}:${REDIS_PORT}
+  redispassword: ${REDIS_PASSWORD}
+
+metrics:
+  expose: true
+  collect:
+    build: true
+    go: true
+    process: true
+    routes: true
+
+# Production external service URLs
+external:
+  hrms:
+    baseurl: ${HRMS_URL}
+    timeout: 10s
+  pfms:
+    baseurl: ${PFMS_URL}
+    timeout: 30s
+  policy:
+    baseurl: ${POLICY_SERVICE_URL}
+    timeout: 10s
+  accounting:
+    baseurl: ${ACCOUNTING_SERVICE_URL}
+    timeout: 15s
+  notification:
+    email:
+      baseurl: ${EMAIL_SERVICE_URL}
+      timeout: 5s
+    sms:
+      baseurl: ${SMS_SERVICE_URL}
+      timeout: 5s

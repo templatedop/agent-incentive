@@ -1,0 +1,147 @@
+appname: "agent-commission"
+
+trace:
+  enabled: true
+  processor: 
+    type: "otlp-grpc"
+    options:
+      host: "localhost:4317"
+  sampler:
+    type: always-on
+    options: 
+      ratio: 0.1
+
+cache:
+  redisserver: localhost:6379
+  redispassword: 
+  redisdbindex: 1
+  redisexpirationtime: 20m
+  lccapacity: 10000
+  lcnumshards: 20
+  lcttl: 2m 
+  lcevictionpercentage: 10
+  lcminrefreshdelay: 15m
+  lcmaxrefreshdelay: 30m
+  lcretrybasedelay: 1s
+  lcbatchsize: 10
+  lcbatchbuffertimeout: 30s
+  isredisenabled: false
+  islocalcacheenabled: true
+
+db: 
+  username: postgres
+  password: postgres
+  host: localhost
+  port: 5432
+  database: agent_commission
+  schema: public
+  maxconns: 20
+  minconns: 2
+  maxconnlifetime: 30
+  maxconnidletime: 10
+  healthcheckperiod: 5
+  QueryTimeoutLow: 2s
+  QueryTimeoutMed: 5s  
+
+info:
+  name: "Agent Commission Management System"
+  version: "1.0.0"
+  description: "Agent Incentive, Commission and Producer Management System for India Post PLI"
+  title: "Agent Commission API"
+  terms: "https://example.com/terms"
+  email: "support@agent-commission.gov.in"
+
+metrics:
+  expose: true
+  buckets: 
+  collect: 
+    build: true
+    go: true
+    process: true  
+    routes: true
+
+server: 
+  debug:
+    stats:
+      expose: true
+      path: "/debug/statsviz"
+    pprof:
+      expose: true
+      path: "/debug/pprof"
+  dashboard:
+    Enabled: true
+  healthcheck:
+    expose: true
+    path: "/health"   
+  bodylimit: 5242880  # 5MB
+  readbuffersize: 16384
+  addr: ":8080"
+  readtimeout: 15s
+  writetimeout: 120s
+  timeout: 60
+  cors:       
+    alloworigins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"        
+    allowheaders:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Request-Id"
+    allowmethods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "PATCH"
+      - "OPTIONS"  
+
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+# Temporal Workflow Engine Configuration
+temporal:
+  host: "localhost"
+  port: "7233"
+  namespace: "default"
+  taskqueue: "agent-commission"
+
+# External Service URLs (for future integration)
+external:
+  hrms:
+    baseurl: "http://localhost:9001"
+    timeout: 10s
+  pfms:
+    baseurl: "http://localhost:9002"
+    timeout: 30s
+  policy:
+    baseurl: "http://localhost:9003"
+    timeout: 10s
+  accounting:
+    baseurl: "http://localhost:9004"
+    timeout: 15s
+  notification:
+    email:
+      baseurl: "http://localhost:9005"
+      timeout: 5s
+    sms:
+      baseurl: "http://localhost:9006"
+      timeout: 5s
+
+# Commission Processing Configuration
+commission:
+  batch:
+    size: 1000  # Process 1000 records per batch
+    sla_hours: 6  # Commission batch SLA: 6 hours
+  trial_approval:
+    sla_days: 7  # Trial statement approval SLA: 7 days
+  disbursement:
+    sla_days: 10  # Disbursement SLA: 10 working days
+  
+# License Management Configuration
+license:
+  renewal:
+    sla_days: 3  # License renewal processing SLA: 3 working days
+  reminders:
+    days: [30, 15, 7, 0]  # Send reminders at T-30, T-15, T-7, T-0 days

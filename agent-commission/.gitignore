@@ -1,0 +1,73 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+agent-commission
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Output of the go coverage tool
+*.coverprofile
+coverage.html
+coverage.txt
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration overrides
+configs/config.local.yaml
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# Test artifacts
+test-results/
+*.test
+
+# Documentation generated files
+docs/swagger.json
+docs/swagger.yaml
+
+# Docker volumes
+docker-volumes/
+
+# OS specific
+Thumbs.db
+.DS_Store
+
+# Migration state (if using golang-migrate locally)
+.migrate/

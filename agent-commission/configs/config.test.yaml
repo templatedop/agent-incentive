@@ -1,0 +1,51 @@
+# Test Environment Configuration
+# Used for automated testing and CI/CD
+
+log:
+  level: "debug"
+  format: "json"
+  output: "stdout"
+
+db:
+  username: postgres
+  password: postgres
+  host: localhost
+  port: 5432
+  database: agent_commission_test
+  schema: public
+  maxconns: 5
+  minconns: 1
+  maxconnlifetime: 10
+  maxconnidletime: 5
+  healthcheckperiod: 5
+
+server:
+  addr: ":8081"  # Different port for tests
+  readtimeout: 5s
+  writetimeout: 30s
+  timeout: 20
+  debug:
+    stats:
+      expose: false
+    pprof:
+      expose: false
+
+temporal:
+  host: "localhost"
+  port: "7233"
+  namespace: "test"
+
+# Use mocked services in tests
+external:
+  hrms:
+    baseurl: "http://mock-hrms:9001"
+    timeout: 5s
+  pfms:
+    baseurl: "http://mock-pfms:9002"
+    timeout: 5s
+  policy:
+    baseurl: "http://mock-policy:9003"
+    timeout: 5s
+  accounting:
+    baseurl: "http://mock-accounting:9004"
+    timeout: 5s

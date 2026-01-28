@@ -1,0 +1,46 @@
+# Development Environment Configuration
+# Inherits from config.yaml with dev-specific overrides
+
+log:
+  level: "debug"
+  format: "console"  # Pretty console output for development
+  output: "stdout"
+
+server:
+  debug:
+    stats:
+      expose: true
+    pprof:
+      expose: true
+  dashboard:
+    Enabled: true
+
+db:
+  username: postgres
+  password: postgres
+  host: localhost
+  port: 5432
+  database: agent_commission_dev
+  schema: public
+  maxconns: 10
+  minconns: 1
+
+temporal:
+  host: "localhost"
+  port: "7233"
+  namespace: "default"
+
+# Mock external services for development
+external:
+  hrms:
+    baseurl: "http://localhost:9001/mock"
+    timeout: 10s
+  pfms:
+    baseurl: "http://localhost:9002/mock"
+    timeout: 30s
+  policy:
+    baseurl: "http://localhost:9003/mock"
+    timeout: 10s
+  accounting:
+    baseurl: "http://localhost:9004/mock"
+    timeout: 15s
