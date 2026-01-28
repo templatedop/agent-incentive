@@ -35,28 +35,27 @@ var FxRepo = fx.Module(
 var FxHandler = fx.Module(
 	"Handlermodule",
 	fx.Provide(
-		// Handlers will be added as we implement each module
 		// Phase 1: Agent Onboarding & Profile Management
-		// fx.Annotate(
-		// 	handler.NewAgentOnboardingHandler,
-		// 	fx.As(new(serverHandler.Handler)),
-		// 	fx.ResultTags(serverHandler.ServerControllersGroupTag),
-		// ),
-		
-		// Phase 2: License Management
+		fx.Annotate(
+			handler.NewAgentOnboardingHandler,
+			fx.As(new(serverHandler.Handler)),
+			fx.ResultTags(serverHandler.ServerControllersGroupTag),
+		),
+
+		// Phase 2: License Management (to be added)
 		// fx.Annotate(
 		// 	handler.NewAgentLicenseHandler,
 		// 	fx.As(new(serverHandler.Handler)),
 		// 	fx.ResultTags(serverHandler.ServerControllersGroupTag),
 		// ),
-		
-		// Phase 3: Commission Rate Configuration
+
+		// Phase 3: Commission Rate Configuration (to be added)
 		// fx.Annotate(
 		// 	handler.NewCommissionRateHandler,
 		// 	fx.As(new(serverHandler.Handler)),
 		// 	fx.ResultTags(serverHandler.ServerControllersGroupTag),
 		// ),
-		
+
 		// Phase 4-10: Additional handlers...
 	),
 )
