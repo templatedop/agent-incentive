@@ -61,7 +61,7 @@ func (r *FinalStatementRepository) CreateFinalStatement(
 		stmt.WorkflowState,
 	).Suffix("RETURNING final_statement_id")
 
-	scanFn := func(row pgx.Row) (int64, error) {
+	scanFn := func(row pgx.CollectableRow) (int64, error) {
 		var id int64
 		err := row.Scan(&id)
 		return id, err
