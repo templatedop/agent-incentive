@@ -26,14 +26,35 @@ func NewAdvisorCoordinatorSummary(profile domain.AgentProfile) AdvisorCoordinato
 	}
 	name += " " + profile.LastName
 
+	// Handle optional pointer fields
+	circleName := ""
+	if profile.CircleName != nil {
+		circleName = *profile.CircleName
+	}
+
+	divisionName := ""
+	if profile.DivisionName != nil {
+		divisionName = *profile.DivisionName
+	}
+
+	circleID := ""
+	if profile.CircleID != nil {
+		circleID = fmt.Sprintf("%d", *profile.CircleID)
+	}
+
+	divisionID := ""
+	if profile.DivisionID != nil {
+		divisionID = fmt.Sprintf("%d", *profile.DivisionID)
+	}
+
 	return AdvisorCoordinatorSummary{
 		CoordinatorID: fmt.Sprintf("%d", profile.AgentProfileID),
 		AgentCode:     profile.AgentCode,
 		Name:          name,
-		Circle:        fmt.Sprintf("%d", profile.CircleID),
-		CircleName:    profile.CircleName,
-		Division:      fmt.Sprintf("%d", profile.DivisionID),
-		DivisionName:  profile.DivisionName,
+		Circle:        circleID,
+		CircleName:    circleName,
+		Division:      divisionID,
+		DivisionName:  divisionName,
 	}
 }
 

@@ -46,25 +46,6 @@ var FxHandler = fx.Module(
 		// Phase 4: Clawback
 		// etc.
 	),
-	fx.Invoke(func(
-		// Phase 1 handlers
-		commissionRateHandler *handler.CommissionRateHandler,
-		lookupHandler *handler.LookupHandler,
-
-		// Phase 2 handlers
-		commissionBatchHandler *handler.CommissionBatchHandler,
-		trialStatementHandler *handler.TrialStatementHandler,
-		finalStatementHandler *handler.FinalStatementHandler,
-	) {
-		// Register Phase 1 handlers
-		serverHandler.Register(commissionRateHandler)
-		serverHandler.Register(lookupHandler)
-
-		// Register Phase 2 handlers
-		serverHandler.Register(commissionBatchHandler)
-		serverHandler.Register(trialStatementHandler)
-		serverHandler.Register(finalStatementHandler)
-	}),
 )
 
 // FxWorkflow module provides Temporal workflow workers and activities

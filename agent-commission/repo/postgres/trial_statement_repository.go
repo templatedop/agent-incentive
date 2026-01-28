@@ -75,7 +75,12 @@ func (r *TrialStatementRepository) CreateTrialStatement(
 		return id, err
 	}
 
-	return dblib.InsertReturning(ctx, r.db, q, scanFn, &stmt.TrialStatementID)
+	id, err := dblib.InsertReturning(ctx, r.db, q, scanFn)
+	if err != nil {
+		return err
+	}
+	stmt.TrialStatementID = id
+	return nil
 }
 
 // GetTrialStatementByID retrieves a trial statement by ID

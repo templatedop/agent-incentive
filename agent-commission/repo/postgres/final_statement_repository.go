@@ -67,7 +67,12 @@ func (r *FinalStatementRepository) CreateFinalStatement(
 		return id, err
 	}
 
-	return dblib.InsertReturning(ctx, r.db, q, scanFn, &stmt.FinalStatementID)
+	id, err := dblib.InsertReturning(ctx, r.db, q, scanFn)
+	if err != nil {
+		return err
+	}
+	stmt.FinalStatementID = id
+	return nil
 }
 
 // GetFinalStatementByID retrieves a final statement by ID
